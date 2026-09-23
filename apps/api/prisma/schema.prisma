@@ -1,0 +1,82 @@
+// schema.prisma — Habit Shaper (acuan: docs/03-SDD.md §2, SAD Phase 1 sub-task 1.1)
+// NOTE: SDD §2 menulis `provider = "tsconfig-paths"` pada generator — itu tidak valid.
+// Dikoreksi ke "prisma-client-js" (generator resmi Prisma Client).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum HabitType {
+  POSITIVE // membangun: tandai melakukan
+  NEGATIVE // menghilangkan: tandai hari bersih (tidak melakukan)
+}
+
+enum CheckInStatus {
+  DONE // positif: dilakukan | negatif: bersih
+  MISS // eksplisit gagal (opsional, selain hari kosong)
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+  habits       Habit[]
+  goals        Goal[]
+}
+
+model Habit {
+  id          String      @id @default(uuid())
+  ownerId     String
+  owner       User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title       String
+  type        HabitType
+  description String?
+  createdAt   DateTime    @default(now())
+  checkIns    CheckIn[]
+  goalLinks   GoalHabit[]
+
+  @@index([ownerId])
+}
+
+model Goal {
+  id          String      @id @default(uuid())
+  ownerId     String
+  owner       User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  deadline    DateTime?
+  createdAt   DateTime    @default(now())
+  habitLinks  GoalHabit[]
+
+  @@index([ownerId])
+}
+
+model GoalHabit {
+  goalId  String
+  habitId String
+  goal    Goal   @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  habit   Habit  @relation(fields: [habitId], references: [id], onDelete: Cascade)
+
+  @@id([goalId, habitId])
+  @@index([habitId])
+}
+
+model CheckIn {
+  id        String        @id @default(uuid())
+  habitId   String
+  habit     Habit         @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  // Hari dalam WIB, disimpan sebagai DATE (yyyy-mm-dd). Backend yang normalisasi.
+  date      DateTime      @db.Date
+  status    CheckInStatus @default(DONE)
+  createdAt DateTime      @default(now())
+
+  @@unique([habitId, date])
+  @@index([habitId, date])
+}
