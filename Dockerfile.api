@@ -1,0 +1,31 @@
+# Dockerfile.api — Express API (SAD §1.2)
+# Build context: repo root. Service "api" di docker-compose.yml.
+FROM node:20-alpine AS base
+WORKDIR /app
+ENV TZ=Asia/Jakarta
+
+FROM base AS deps
+COPY package.json package-lock.json tsconfig.json ./
+COPY apps/api/package.json ./apps/api/package.json
+COPY apps/api/tsconfig.json ./apps/api/tsconfig.json
+COPY packages/shared/package.json ./packages/shared/package.json
+COPY packages/shared/tsconfig.json ./packages/shared/tsconfig.json
+RUN npm ci
+
+FROM deps AS builder
+COPY apps/api/src ./apps/api/src
+COPY packages/shared/src ./packages/shared/src
+RUN npm run build --workspace @habit-shaper/api
+
+FROM base AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV TZ=Asia/Jakarta
+COPY package.json package-lock.json ./
+COPY apps/api/package.json ./apps/api/package.json
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/node_modules ./node_modules
+EXPOSE 4000
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:4000/health || exit 1
+CMD ["node", "apps/api/dist/index.js"]

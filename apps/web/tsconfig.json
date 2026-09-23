@@ -1,9 +1,16 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "jsx": "preserve",
-    "noEmit": true
+    "incremental": true,
+    "plugins": [{ "name": "next" }],
+    "noEmit": true,
+    "types": ["node"]
   },
-  "include": ["src/**/*"],
+  "include": ["next-env.d.ts", "next.config.mjs", "src/**/*"],
   "exclude": ["node_modules", "dist", ".next"]
 }
