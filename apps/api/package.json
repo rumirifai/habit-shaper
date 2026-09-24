@@ -11,15 +11,21 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
+    "bcryptjs": "^3.0.3",
     "express": "^4.21.2"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.0",
     "@types/node": "^22.18.0",
     "prisma": "^6.19.3",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.2"
   },
   "engines": {
     "node": ">=20"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   }
 }
