@@ -18,6 +18,7 @@ async function main(): Promise<void> {
       email: DEMO_EMAIL,
       passwordHash,
       name: "Demo",
+      tokenVersion: 0,
     },
   });
   // eslint-disable-next-line no-console

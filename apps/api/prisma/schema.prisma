@@ -26,6 +26,7 @@ model User {
   email        String   @unique
   passwordHash String
   name         String?
+  tokenVersion Int      @default(0)
   createdAt    DateTime @default(now())
   habits       Habit[]
   goals        Goal[]
