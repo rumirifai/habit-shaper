@@ -7,10 +7,15 @@
     "moduleResolution": "Bundler",
     "jsx": "preserve",
     "incremental": true,
-    "plugins": [{ "name": "next" }],
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    "allowJs": true
   },
-  "include": ["next-env.d.ts", "next.config.mjs", "src/**/*"],
+  "include": ["next-env.d.ts", "next.config.mjs", "src/**/*", ".next/types/**/*.ts"],
   "exclude": ["node_modules", "dist", ".next"]
 }

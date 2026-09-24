@@ -24,6 +24,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
+    command: npm run dev --workspace @habit-shaper/api
     restart: unless-stopped
     depends_on:
       db:
@@ -32,13 +33,23 @@ services:
       NODE_ENV: development
       PORT: 4000
       TZ: Asia/Jakarta
+      # Polling agar tsx watch mendeteksi perubahan via bind mount
+      # Docker Desktop (Windows).
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "500"
       DATABASE_URL: postgresql://${POSTGRES_USER:-habit}:${POSTGRES_PASSWORD:-habit_dev_password}@db:5432/${POSTGRES_DB:-habitshaper}?schema=public
-      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev_access_secret_change_me}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev_refresh_secret_change_me}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev_access_secret_change_me_32_chars_min}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev_refresh_secret_change_me_32_chars_min}
     ports:
       - "4000:4000"
+    volumes:
+      - ./apps/api/src:/app/apps/api/src
+      - ./apps/api/tsconfig.json:/app/apps/api/tsconfig.json:ro
+      - ./tsconfig.json:/app/tsconfig.json:ro
+      - ./packages/shared/src:/app/packages/shared/src
+      - /app/node_modules
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4000/health"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -48,17 +59,26 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.web
+    command: npm run dev --workspace @habit-shaper/web
     restart: unless-stopped
     depends_on:
       api:
         condition: service_started
     environment:
-      NODE_ENV: production
+      NODE_ENV: development
       PORT: 3000
+      # Polling agar file watcher Next mendeteksi perubahan via bind mount
+      # Docker Desktop (Windows). Tanpa ini, edit file sering tidak memicu recompile.
+      WATCHPACK_POLLING: "true"
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000/api/v1}
       API_INTERNAL_URL: ${API_INTERNAL_URL:-http://api:4000/api/v1}
     ports:
       - "3000:3000"
+    volumes:
+      - ./apps/web:/app/apps/web
+      - ./packages/shared/src:/app/packages/shared/src
+      - ./tsconfig.json:/app/tsconfig.json:ro
+      - /app/node_modules
 
 volumes:
   pgdata:
