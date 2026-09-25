@@ -1,19 +1,17 @@
 // prisma/seed.ts — seed dev: 1 user demo (SAD Phase 1). Non-prod only.
 // Dijalankan via `npx prisma db seed` (lihat "prisma.seed" di package.json).
 import { PrismaClient } from "@prisma/client";
-import bcrypt from "bcryptjs";
+import argon2 from "argon2";
 
 const DEMO_EMAIL = "demo@habitshaper.com";
 const DEMO_PASSWORD = "demo123";
-const SALT_ROUNDS = 10;
-
 const prisma = new PrismaClient();
 
 async function main(): Promise<void> {
-  const passwordHash: string = await bcrypt.hash(DEMO_PASSWORD, SALT_ROUNDS);
+  const passwordHash = await argon2.hash(DEMO_PASSWORD, { type: argon2.argon2id });
   const user = await prisma.user.upsert({
     where: { email: DEMO_EMAIL },
-    update: {},
+    update: { passwordHash },
     create: {
       email: DEMO_EMAIL,
       passwordHash,

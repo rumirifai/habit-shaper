@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { Prisma } from "@prisma/client";
-import bcrypt from "bcryptjs";
+import argon2 from "argon2";
 import { z } from "zod";
 import {
   issueAccessToken,
@@ -47,7 +47,7 @@ router.post("/register", async (req: Request, res: Response) => {
   if (!parsed.success) return validationFailure(res, parsed.error);
   const input: RegisterInput = parsed.data;
   try {
-    const passwordHash = await bcrypt.hash(input.password, 12);
+    const passwordHash = await argon2.hash(input.password, { type: argon2.argon2id });
     const user = await prisma.user.create({
       data: { email: input.email, passwordHash, ...(input.name === undefined ? {} : { name: input.name }) },
       select: { id: true, email: true, name: true },
@@ -71,7 +71,7 @@ router.post("/login", async (req: Request, res: Response) => {
       where: { email: input.email },
       select: { id: true, email: true, name: true, passwordHash: true, tokenVersion: true },
     });
-    if (user === null || !(await bcrypt.compare(input.password, user.passwordHash))) {
+    if (user === null || !(await argon2.verify(user.passwordHash, input.password))) {
       res.status(401).json({ error: { code: "INVALID_CREDENTIALS", message: "Email atau password salah." } });
       return;
     }
