@@ -25,7 +25,7 @@ export default [
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "@typescript-eslint/consistent-type-imports": ["error", { prefer: "type-imports" }],
-      "no-console": ["warn", { allow: ["warn", "error"] }],
+      "no-console": ["warn", { allow: ["log", "warn", "error"] }],
       eqeqeq: ["error", "always"],
     },
   },
