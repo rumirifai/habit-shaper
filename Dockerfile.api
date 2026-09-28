@@ -5,6 +5,7 @@ WORKDIR /app
 ENV TZ=Asia/Jakarta
 
 FROM base AS deps
+RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json tsconfig.json ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/api/tsconfig.json ./apps/api/tsconfig.json
