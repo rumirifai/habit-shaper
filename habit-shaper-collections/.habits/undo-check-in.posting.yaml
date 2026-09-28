@@ -1,0 +1,7 @@
+name: undo-check-in
+method: DELETE
+url: http://localhost:4000/api/v1/habits/$HABIT_ID/check-in
+auth:
+  type: bearer_token
+  bearer_token:
+    token: $ACCESS_TOKEN

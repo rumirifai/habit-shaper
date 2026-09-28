@@ -1,0 +1,13 @@
+name: today-check-in
+method: POST
+url: http://localhost:4000/api/v1/habits/$HABIT_ID/check-in
+body:
+  content: '{}'
+  content_type: application/json
+auth:
+  type: bearer_token
+  bearer_token:
+    token: $ACCESS_TOKEN
+headers:
+- name: content-type
+  value: application/json

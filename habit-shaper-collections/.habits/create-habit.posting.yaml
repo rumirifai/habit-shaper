@@ -16,3 +16,5 @@ auth:
 headers:
 - name: content-type
   value: application/json
+scripts:
+  on_response: scripts/habit_handler.py:on_habit_response
