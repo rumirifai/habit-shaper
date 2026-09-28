@@ -1,0 +1,6 @@
+name: get-habit
+url: http://localhost:4000/api/v1/habits/
+auth:
+  type: bearer_token
+  bearer_token:
+    token: $ACCESS_TOKEN

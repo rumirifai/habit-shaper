@@ -1,0 +1,17 @@
+name: update-habit
+method: PATCH
+url: http://localhost:4000/api/v1/habits/4ff12b4d-2439-42e7-9d98-2aca74213941
+body:
+  content: |-
+    {
+      "title" : "Baca buku 15 menit",
+      "description" : "Baca setiap malam setelah gosok gigi"
+    }
+  content_type: application/json
+auth:
+  type: bearer_token
+  bearer_token:
+    token: $ACCESS_TOKEN
+headers:
+- name: content-type
+  value: application/json

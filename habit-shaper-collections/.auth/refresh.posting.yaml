@@ -1,0 +1,8 @@
+name: refresh
+method: POST
+url: http://localhost:4000/api/v1/auth/refresh
+headers:
+- name: cookie
+  value: refreshToken=$REFRESH_TOKEN
+scripts:
+  on_response: scripts/refresh_handler.py:on_refresh_response
