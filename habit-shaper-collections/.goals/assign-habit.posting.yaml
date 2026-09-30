@@ -1,0 +1,18 @@
+name: assign-habit
+method: POST
+url: http://localhost:4000/api/v1/goals/$GOAL_ID/habits
+body:
+  content: |-
+    {
+      "habitId" : "$HABIT_ID"
+    }
+  content_type: application/json
+auth:
+  type: bearer_token
+  bearer_token:
+    token: $ACCESS_TOKEN
+headers:
+- name: content-type
+  value: application/json
+scripts:
+  on_response: scripts/habit_handler.py:on_habit_response

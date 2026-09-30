@@ -1,0 +1,16 @@
+name: update-goal
+method: PATCH
+url: http://localhost:4000/api/v1/goals/$GOAL_ID
+body:
+  content: |-
+    {
+      "title" : "Coba hidup lebih sehat untuk dirimu sendiri"
+    }
+  content_type: application/json
+auth:
+  type: bearer_token
+  bearer_token:
+    token: $ACCESS_TOKEN
+headers:
+- name: content-type
+  value: application/json

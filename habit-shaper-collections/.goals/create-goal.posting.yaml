@@ -1,0 +1,21 @@
+name: create-goal
+method: POST
+url: http://localhost:4000/api/v1/goals/
+body:
+  content: |-
+    {
+      "title" : "Coba hidup lebih sehat",
+      "description" : "Aku sayang kamu, karena itu kamu harus sayangi dirimu sendiri juga",
+      "deadline": "2026-12-31",
+      "habitIds": ["$HABIT_ID"]
+    }
+  content_type: application/json
+auth:
+  type: bearer_token
+  bearer_token:
+    token: $ACCESS_TOKEN
+headers:
+- name: content-type
+  value: application/json
+scripts:
+  on_response: scripts/goal_handler.py:on_goal_response

@@ -1,0 +1,8 @@
+name: get-specific-goal
+url: http://localhost:4000/api/v1/goals/$GOAL_ID
+auth:
+  type: bearer_token
+  bearer_token:
+    token: $ACCESS_TOKEN
+scripts:
+  on_response: scripts/goal_handler.py:on_goal_response

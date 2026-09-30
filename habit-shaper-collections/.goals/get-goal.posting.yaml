@@ -1,0 +1,6 @@
+name: get-goal
+url: http://localhost:4000/api/v1/goals/
+auth:
+  type: bearer_token
+  bearer_token:
+    token: $ACCESS_TOKEN
