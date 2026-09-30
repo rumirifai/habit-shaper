@@ -2,15 +2,9 @@ import { Prisma } from "@prisma/client";
 import argon2 from "argon2";
 import type { Request, Response } from "express";
 import type { ZodError } from "zod";
-import {
-  issueAccessToken,
-  issueRefreshToken,
-  REFRESH_COOKIE_NAME,
-  REFRESH_TTL_MS,
-  verifyRefreshToken,
-} from "../lib/jwt.js";
+import { issueAccessToken, issueRefreshToken, REFRESH_COOKIE_NAME, REFRESH_TTL_MS, verifyRefreshToken} from "../lib/jwt.js";
 import { prisma } from "../lib/prisma.js";
-import { loginSchema, registerSchema, type LoginInput, type RegisterInput } from "../schemas/auth.js";
+import { loginSchema, registerSchema, type LoginInput, type RegisterInput} from "../schemas/auth.js";
 
 const cookieOptions = {
   httpOnly: true,
@@ -26,7 +20,9 @@ function validationFailure(res: Response, error: ZodError): void {
 }
 
 function unexpectedError(res: Response): void {
-  res.status(500).json({ error: { code: "INTERNAL_SERVER_ERROR", message: "Terjadi kesalahan internal." } });
+  res
+    .status(500)
+    .json({ error: { code: "INTERNAL_SERVER_ERROR", message: "Terjadi kesalahan internal." } });
 }
 
 export async function registerAuth(req: Request, res: Response): Promise<void> {
@@ -39,12 +35,16 @@ export async function registerAuth(req: Request, res: Response): Promise<void> {
   try {
     const passwordHash = await argon2.hash(input.password, { type: argon2.argon2id });
     const user = await prisma.user.create({
-      data: { email: input.email, passwordHash, ...(input.name === undefined ? {} : { name: input.name }) },
+      data: {
+        email: input.email,
+        passwordHash,
+        ...(input.name === undefined ? {} : { name: input.name }),
+      },
       select: { id: true, email: true, name: true },
     });
     res.status(201).json({ user });
-  } catch (e: unknown) {
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+  } catch (error: unknown) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       res.status(409).json({ error: { code: "CONFLICT", message: "Email sudah terdaftar." } });
       return;
     }
@@ -65,7 +65,9 @@ export async function loginAuth(req: Request, res: Response): Promise<void> {
       select: { id: true, email: true, name: true, passwordHash: true, tokenVersion: true },
     });
     if (user === null || !(await argon2.verify(user.passwordHash, input.password))) {
-      res.status(401).json({ error: { code: "INVALID_CREDENTIALS", message: "Email atau password salah." } });
+      res
+        .status(401)
+        .json({ error: { code: "INVALID_CREDENTIALS", message: "Email atau password salah." } });
       return;
     }
     res.cookie(REFRESH_COOKIE_NAME, issueRefreshToken(user.id, user.tokenVersion), {
@@ -76,8 +78,7 @@ export async function loginAuth(req: Request, res: Response): Promise<void> {
       accessToken: issueAccessToken(user.id, user.tokenVersion),
       user: { id: user.id, email: user.email, name: user.name },
     });
-  } catch (e: unknown) {
-    void e;
+  } catch {
     unexpectedError(res);
   }
 }
@@ -94,7 +95,10 @@ export async function refreshAuth(req: Request, res: Response): Promise<void> {
     const claims = verifyRefreshToken(token);
     if (claims === null) {
       res.status(401).json({
-        error: { code: "INVALID_REFRESH_TOKEN", message: "Refresh token tidak valid atau kedaluwarsa." },
+        error: {
+          code: "INVALID_REFRESH_TOKEN",
+          message: "Refresh token tidak valid atau kedaluwarsa.",
+        },
       });
       return;
     }
@@ -105,7 +109,10 @@ export async function refreshAuth(req: Request, res: Response): Promise<void> {
     if (user === null || user.tokenVersion !== claims.tokenVersion) {
       res.clearCookie(REFRESH_COOKIE_NAME, cookieOptions);
       res.status(401).json({
-        error: { code: "REFRESH_TOKEN_REVOKED", message: "Sesi sudah dicabut. Silakan login kembali." },
+        error: {
+          code: "REFRESH_TOKEN_REVOKED",
+          message: "Sesi sudah dicabut. Silakan login kembali.",
+        },
       });
       return;
     }
@@ -113,8 +120,7 @@ export async function refreshAuth(req: Request, res: Response): Promise<void> {
       accessToken: issueAccessToken(user.id, user.tokenVersion),
       user: { id: user.id, email: user.email, name: user.name },
     });
-  } catch (e: unknown) {
-    void e;
+  } catch {
     unexpectedError(res);
   }
 }
@@ -133,8 +139,7 @@ export async function logoutAuth(req: Request, res: Response): Promise<void> {
     }
     res.clearCookie(REFRESH_COOKIE_NAME, cookieOptions);
     res.status(204).end();
-  } catch (e: unknown) {
-    void e;
+  } catch {
     res.clearCookie(REFRESH_COOKIE_NAME, cookieOptions);
     res.status(500).json({
       error: { code: "LOGOUT_FAILED", message: "Logout gagal diproses. Silakan coba lagi." },
