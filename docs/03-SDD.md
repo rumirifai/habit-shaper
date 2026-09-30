@@ -1,11 +1,11 @@
 # SDD — Habit Shaper (Software Design Document)
 
-| Field | Isi |
-|---|---|
-| Versi | 1.0 (2026-09-23) |
-| Acuan | PRD v1.0, SAD v1.0 |
+| Field         | Isi                                              |
+| ------------- | ------------------------------------------------ |
+| Versi         | 1.0 (2026-09-23)                                 |
+| Acuan         | PRD v1.0, SAD v1.0                               |
 | Timezone baku | `Asia/Jakarta` (WIB, UTC+7), minggu Senin–Minggu |
-| Aturan TS | Strict, no `any` (lihat SAD §9) |
+| Aturan TS     | Strict, no `any` (lihat SAD §9)                  |
 
 ## 1. ERD
 
@@ -61,7 +61,7 @@ Relasi Goal–Habit **many-to-many** via `GoalHabit` (composite PK `@@id([goalId
 ```prisma
 // schema.prisma
 generator client {
-  provider = "tsconfig-paths"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -82,8 +82,9 @@ enum CheckInStatus {
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
-  passwordHash String
-  name         String?
+    passwordHash String
+    name         String?
+    tokenVersion Int      @default(0)
   createdAt    DateTime @default(now())
   habits       Habit[]
   goals        Goal[]
@@ -154,11 +155,11 @@ Meski sistem lightweight, **streak tidak disimpan sebagai kolom mutable** (`curr
 
 Cascade rules (apresiasi streak):
 
-| Aksi | Efek |
-|---|---|
-| Hapus Goal | Hanya hapus `GoalHabit` miliknya; `Habit` + `CheckIn` utuh |
+| Aksi        | Efek                                                                                                                 |
+| ----------- | -------------------------------------------------------------------------------------------------------------------- |
+| Hapus Goal  | Hanya hapus `GoalHabit` miliknya; `Habit` + `CheckIn` utuh                                                           |
 | Hapus Habit | Hapus `CheckIn` + `GoalHabit` miliknya (cascade); Goal lain tetap ada (bisa jadi 0 habit → UI tawarkan assign ulang) |
-| Hapus User | Hapus semua miliknya (cascade) |
+| Hapus User  | Hapus semua miliknya (cascade)                                                                                       |
 
 ## 3. Spesifikasi Endpoint API (`/api/v1`)
 
@@ -166,37 +167,37 @@ Base: `http://localhost:4000/api/v1`. Auth: Bearer access JWT atau cookie refres
 
 ### 3.1 Auth
 
-| Method & Path | Body | Response 2xx |
-|---|---|---|
-| `POST /auth/register` | `{ email, password, name? }` | `201 { user: { id, email, name } }` |
-| `POST /auth/login` | `{ email, password }` | `200 { accessToken }` + set refresh cookie |
-| `POST /auth/refresh` | — (cookie) | `200 { accessToken }` |
-| `POST /auth/logout` | — | `204` |
+| Method & Path         | Body                         | Response 2xx                                                          |
+| --------------------- | ---------------------------- | --------------------------------------------------------------------- |
+| `POST /auth/register` | `{ email, password, name? }` | `201 { user: { id, email, name } }`                                   |
+| `POST /auth/login`    | `{ email, password }`        | `200 { accessToken, user: { id, email, name } }` + set refresh cookie |
+| `POST /auth/refresh`  | — (cookie)                   | `200 { accessToken, user: { id, email, name } }`                      |
+| `POST /auth/logout`   | —                            | `204`                                                                 |
 
 ### 3.2 Habits
 
-| Method & Path | Keterangan |
-|---|---|
-| `GET /habits` | List milik user + status hari ini + current streak (ringkas) |
-| `POST /habits` | Buat habit |
-| `GET /habits/:id` | Detail + streak ringkas |
-| `PATCH /habits/:id` | Edit title/description |
-| `DELETE /habits/:id` | Hapus (cascade check-in + lepas goal) |
-| `POST /habits/:id/check-in` | Check-in DONE untuk tanggal WIB (default hari ini). Idempotent |
-| `DELETE /habits/:id/check-in?date=yyyy-mm-dd` | Undo (hanya tanggal yang diizinkan, default hari ini) |
-| `GET /habits/:id/streak?range=daily\|weekly&week=yyyy-mm-dd` | Streak harian + agregat mingguan |
+| Method & Path                                                | Keterangan                                                                                                     |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `GET /habits?date=yyyy-mm-dd`                                | List milik user + `checkIn`, `checkedIn` untuk tanggal pilihan (default WIB hari ini) + current streak ringkas |
+| `POST /habits`                                               | Buat habit                                                                                                     |
+| `GET /habits/:id`                                            | Detail + streak ringkas `{ current, longest, lastDoneDate }`                                                   |
+| `PATCH /habits/:id`                                          | Edit title/description                                                                                         |
+| `DELETE /habits/:id`                                         | Hapus (cascade check-in + lepas goal)                                                                          |
+| `POST /habits/:id/check-in`                                  | Check-in DONE untuk tanggal WIB (default hari ini). Idempotent                                                 |
+| `DELETE /habits/:id/check-in?date=yyyy-mm-dd`                | Undo (hanya tanggal yang diizinkan, default hari ini)                                                          |
+| `GET /habits/:id/streak?range=daily\|weekly&week=yyyy-mm-dd` | Streak harian + agregat mingguan                                                                               |
 
 ### 3.3 Goals (many-to-many, min 1 habit)
 
-| Method & Path | Keterangan |
-|---|---|
-| `GET /goals` | List + hitung habit terhubung + progres |
-| `POST /goals` | Buat goal **wajib** `habitIds: string[]` min 1. Mendukung `newHabits: { title, type }[]` untuk create-inline |
-| `GET /goals/:id` | Detail + habits + progres |
-| `PATCH /goals/:id` | Edit field goal (tidak mengubah streak) |
-| `DELETE /goals/:id` | Hapus goal saja (streak utuh) |
-| `POST /goals/:id/habits` | Assign habit existing `{ habitId }` (cek owner sama) |
-| `DELETE /goals/:id/habits/:habitId` | Unassign; ditolak jika akan membuat goal 0 habit (kecuali goal juga dihapus) |
+| Method & Path                       | Keterangan                                                                                                   |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `GET /goals`                        | List + hitung habit terhubung + progres                                                                      |
+| `POST /goals`                       | Buat goal **wajib** `habitIds: string[]` min 1. Mendukung `newHabits: { title, type }[]` untuk create-inline |
+| `GET /goals/:id`                    | Detail + habits + progres                                                                                    |
+| `PATCH /goals/:id`                  | Edit field goal (tidak mengubah streak)                                                                      |
+| `DELETE /goals/:id`                 | Hapus goal saja (streak utuh)                                                                                |
+| `POST /goals/:id/habits`            | Assign habit existing `{ habitId }` (cek owner sama)                                                         |
+| `DELETE /goals/:id/habits/:habitId` | Unassign; ditolak jika akan membuat goal 0 habit (kecuali goal juga dihapus)                                 |
 
 ### 3.4 Kontrak TypeScript + Zod (contoh)
 
@@ -213,21 +214,23 @@ export const createHabitSchema = z.object({
 });
 export type CreateHabitInput = z.infer<typeof createHabitSchema>;
 
-export const createGoalSchema = z.object({
-  title: z.string().trim().min(1).max(120),
-  description: z.string().trim().max(500).optional(),
-  deadline: z.string().date().optional(), // yyyy-mm-dd
-  habitIds: z.array(z.string().uuid()).default([]),
-  newHabits: z.array(createHabitSchema).max(5).default([]),
-}).superRefine((val, ctx) => {
-  if (val.habitIds.length + val.newHabits.length < 1) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Goal wajib punya minimal 1 habit: pilih habit atau buat baru.",
-      path: ["habitIds"],
-    });
-  }
-});
+export const createGoalSchema = z
+  .object({
+    title: z.string().trim().min(1).max(120),
+    description: z.string().trim().max(500).optional(),
+    deadline: z.string().date().optional(), // yyyy-mm-dd
+    habitIds: z.array(z.string().uuid()).default([]),
+    newHabits: z.array(createHabitSchema).max(5).default([]),
+  })
+  .superRefine((val, ctx) => {
+    if (val.habitIds.length + val.newHabits.length < 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Goal wajib punya minimal 1 habit: pilih habit atau buat baru.",
+        path: ["habitIds"],
+      });
+    }
+  });
 export type CreateGoalInput = z.infer<typeof createGoalSchema>;
 
 export const checkInSchema = z.object({
@@ -246,7 +249,7 @@ export type DailyStreakResponse = {
 export type WeeklyStreakResponse = {
   habitId: string;
   weekStart: string; // Senin yyyy-mm-dd
-  weekEnd: string;   // Minggu yyyy-mm-dd
+  weekEnd: string; // Minggu yyyy-mm-dd
   done: number;
   miss: number;
   allowance: 3;
@@ -263,7 +266,7 @@ export type GoalProgressResponse = {
 };
 ```
 
-Status code: `200/201/204`, `400` validasi, `401` belum login, `404` tidak ada/bukan milik user, `409` konflik (mis. assign ganda — atau jadikan idempotent 200), `422` aturan bisnis (goal tanpa habit).
+Status code: `200/201/204`, `400` validasi, `401` belum login, `404` tidak ada/bukan milik user, `409` konflik (termasuk email duplikat), `422` aturan bisnis (goal tanpa habit). Undo check-in yang tidak ada tetap `204` (idempotent); unassign yang berhasil `204`.
 
 ## 4. Logic Breakdown (Algoritma)
 
@@ -420,6 +423,7 @@ elapsedDays = jumlah hari Senin..min(hari ini, Minggu)
 ```
 
 - Goal tanpa habit tidak mungkin (dicegah saat create).
+- `habitIds` duplikat ditolak sebagai input tidak valid.
 - Unassign terakhir ditolak; hapus goal tidak menyentuh riwayat.
 - Campuran build/break sah: keduanya memakai DONE yang sama.
 
@@ -460,18 +464,18 @@ stateDiagram-v2
   MISS --> DONE: backfill? (MVP: ditolak, tetap MISS)
 ```
 
-| Edge | Aturan |
-|---|---|
-| Double check-in | Idempotent; unique constraint; response sama |
-| Undo | Hapus baris DONE; hanya untuk tanggal hari ini (MVP) |
-| Backfill kemarin | MVP ditolak (`422 BACKFILL_NOT_ALLOWED`) agar streak jujur; bisa dilonggarkan nanti dengan peran khusus |
-| Future date | Ditolak (`422 FUTURE_DATE`) |
-| Timezone | “Hari ini” selalu dari backend WIB, bukan jam browser |
-| Hapus habit | Check-in ikut terhapus; goal yang kehilangan habit tampilkan CTA assign ulang |
-| Hapus goal | Streak/check-in utuh; hanya join dihapus |
-| Assign lintas user | Ditolak 404 (habit bukan milik user) |
-| Goal 0 habit | Create ditolak 422; unassign terakhir ditolak 422 |
-| Ganti minggu | `week` param parsing `yyyy-mm-dd` → normalisasi ke Senin-nya |
+| Edge               | Aturan                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------- |
+| Double check-in    | Idempotent; unique constraint; response sama                                                            |
+| Undo               | Hapus baris DONE; hanya untuk tanggal hari ini (MVP)                                                    |
+| Backfill kemarin   | MVP ditolak (`422 BACKFILL_NOT_ALLOWED`) agar streak jujur; bisa dilonggarkan nanti dengan peran khusus |
+| Future date        | Ditolak (`422 FUTURE_DATE`)                                                                             |
+| Timezone           | “Hari ini” selalu dari backend WIB, bukan jam browser                                                   |
+| Hapus habit        | Check-in ikut terhapus; goal yang kehilangan habit tampilkan CTA assign ulang                           |
+| Hapus goal         | Streak/check-in utuh; hanya join dihapus                                                                |
+| Assign lintas user | Ditolak 404 (habit bukan milik user)                                                                    |
+| Goal 0 habit       | Create ditolak 422; unassign terakhir ditolak 422                                                       |
+| Ganti minggu       | `week` param parsing `yyyy-mm-dd` → normalisasi ke Senin-nya                                            |
 
 ## 6. Validasi & Error Handling
 
@@ -486,12 +490,12 @@ stateDiagram-v2
 ## 7. Index, Query & Migrasi
 
 - Index: `User.email unique`, `Habit(ownerId)`, `Goal(ownerId)`, `CheckIn(habitId,date)` + unique, `GoalHabit(habitId)`.
-- Query streak: ambil `CheckIn` 90 hari terakhir per habit (`where: { habitId, date: { gte } } orderBy: { date: asc }`), hitung di memori (murah + deterministik).
+- Query streak: ambil `CheckIn` dalam jendela 90 hari terakhir per habit, hitung current/longest dari jendela tersebut di memori (murah + deterministik; `longest` merepresentasikan longest dalam window 90 hari, bukan seluruh riwayat).
 - Dashboard: 1 query habits + 1 query check-in hari ini + 1 query links goals (hindari N+1 per habit).
 - Migrasi: `prisma migrate dev` saat develop; `prisma migrate deploy` di entrypoint container API; seed hanya dev.
 
 ## 8. Uji (Definisi Selesai Teknis)
 
 - Unit (murni, tanpa DB): `calcCurrentStreak`, `calcLongestStreak`, `calcWeekly`, `mondayOfWeekWib` — termasuk kasus putus 1 hari, toleransi 3, batas Senin/Minggu, undo.
-- Integration (supertest + DB test): register/login isolasi, create goal tanpa habit → 422, create-inline habit, double check-in idempotent, hapus goal streak utuh, weekly remaining.
+- Integration (supertest + DB test): register/login isolasi, create goal tanpa habit → 422, create-inline habit, double check-in idempotent, hapus goal streak utuh, weekly remaining, malformed route UUID → 400.
 - Manual: `docker compose up --build`, skenario Andini (build) + Bagas (break) 7 hari simulasi.

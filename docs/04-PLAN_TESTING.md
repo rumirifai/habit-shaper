@@ -1,11 +1,11 @@
 # 04 — Plan Testing Habit Shaper
 
-| Field | Isi |
-|---|---|
-| Versi | 1.0 (2026-09-25) |
-| Acuan | `01-PRD.md` v1.0, `02-SAD.md` v1.0, `03-SDD.md` v1.0 |
+| Field         | Isi                                                         |
+| ------------- | ----------------------------------------------------------- |
+| Versi         | 1.0 (2026-09-25)                                            |
+| Acuan         | `01-PRD.md` v1.0, `02-SAD.md` v1.0, `03-SDD.md` v1.0        |
 | Cakupan phase | Phase 1 – Phase 4 (Phase 0 dan Phase 5 tidak diuji di sini) |
-| Aturan TS | Strict, `no-explicit-any: error`; test juga tanpa `any` |
+| Aturan TS     | Strict, `no-explicit-any: error`; test juga tanpa `any`     |
 
 Dokumen ini adalah matriks dan rencana testing. Setiap item memakai checklist `- [ ]` agar bisa ditandai saat dikerjakan. Semua ID test bersifat stabil (mis. `AUTH-I-01`) supaya bisa dirujuk di PR/commit.
 
@@ -13,14 +13,14 @@ Keluar scope (tidak dibuatkan test): reminder/notifikasi, sosial, gamifikasi eks
 
 ## 1. Perkakas dan Konvensi
 
-| Kebutuhan | Pilihan terkunci |
-|---|---|
-| Unit + integration backend | Vitest (`vitest`), environment `node` |
-| HTTP route testing | Supertest terhadap Express app (tanpa listen port) |
-| Frontend testing | React Testing Library + Vitest environment `jsdom` + `user-event` |
-| DB integration | PostgreSQL test database terpisah + Prisma (`prisma migrate deploy`) |
-| Validasi kontrak | Skema Zod yang sama dengan kode produksi (tidak diduplikasi manual) |
-| Timezone test | Proses test jalan dengan `TZ=Asia/Jakarta`; util tanggal diuji sebagai fungsi murni dengan parameter `today` eksplisit |
+| Kebutuhan                  | Pilihan terkunci                                                                                                       |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Unit + integration backend | Vitest (`vitest`), environment `node`                                                                                  |
+| HTTP route testing         | Supertest terhadap Express app (tanpa listen port)                                                                     |
+| Frontend testing           | React Testing Library + Vitest environment `jsdom` + `user-event`                                                      |
+| DB integration             | PostgreSQL test database terpisah + Prisma (`prisma migrate deploy`)                                                   |
+| Validasi kontrak           | Skema Zod yang sama dengan kode produksi (tidak diduplikasi manual)                                                    |
+| Timezone test              | Proses test jalan dengan `TZ=Asia/Jakarta`; util tanggal diuji sebagai fungsi murni dengan parameter `today` eksplisit |
 
 Layout yang disarankan:
 
@@ -61,18 +61,18 @@ Tujuan: skema sesuai SDD §2 dan isolasi multi-user (PRD FR-01, SDD §5).
 
 #### 2.1 Integration — Auth routes
 
-- [ ] `AUTH-I-01` `POST /api/v1/auth/register` 201 + body `{ user: { id, email, name } }`, tanpa `passwordHash` bocor.
-- [ ] `AUTH-I-02` Register email duplikat -> 409/400 dengan envelope `error.code` terisi.
-- [ ] `AUTH-I-03` Register email invalid / password terlalu pendek -> 400 `VALIDATION_ERROR` + `details` dari Zod.
-- [ ] `AUTH-I-04` `POST /api/v1/auth/login` kredensial benar -> 200 `{ accessToken }` + set-cookie refresh `HttpOnly`.
-- [ ] `AUTH-I-05` Login password salah -> 401, tidak ada cookie yang di-set.
-- [ ] `AUTH-I-06` `POST /api/v1/auth/refresh` dengan cookie valid -> 200 access token baru.
-- [ ] `AUTH-I-07` Refresh tanpa cookie / cookie rusak -> 401.
-- [ ] `AUTH-I-08` `POST /api/v1/auth/logout` -> 204 + cookie di-clear.
-- [ ] `AUTH-I-09` Akses route terproteksi tanpa token -> 401.
-- [ ] `AUTH-I-10` Isolasi tenant: user A tidak bisa `GET /habits` milik user B; `GET /habits/:id` milik orang lain -> 404 (bukan 403).
-- [ ] `AUTH-I-11` Password tersimpan sebagai hash (bukan plaintext) — cek via Prisma langsung.
-- [ ] `AUTH-I-12` `requireAuth` menyuntik `req.user.id` bertipe `string` dan semua query habit/goal memfilter `ownerId`.
+- [x] `AUTH-I-01` `POST /api/v1/auth/register` 201 + body `{ user: { id, email, name } }`, tanpa `passwordHash` bocor.
+- [x] `AUTH-I-02` Register email duplikat -> 409 `CONFLICT`.
+- [x] `AUTH-I-03` Register email invalid / password terlalu pendek -> 400 `VALIDATION_ERROR` + `details` dari Zod.
+- [x] `AUTH-I-04` `POST /api/v1/auth/login` kredensial benar -> 200 `{ accessToken, user }` + set-cookie refresh `HttpOnly`.
+- [x] `AUTH-I-05` Login password salah -> 401, tidak ada cookie yang di-set.
+- [x] `AUTH-I-06` `POST /api/v1/auth/refresh` dengan cookie valid -> 200 access token baru dan user.
+- [x] `AUTH-I-07` Refresh tanpa cookie / cookie rusak -> 401.
+- [x] `AUTH-I-08` `POST /api/v1/auth/logout` -> 204 + cookie di-clear.
+- [x] `AUTH-I-09` Akses route terproteksi tanpa token -> 401.
+- [x] `AUTH-I-10` Isolasi tenant: user A tidak bisa `GET /habits` milik user B; `GET /habits/:id` milik orang lain -> 404 (bukan 403).
+- [x] `AUTH-I-11` Password tersimpan sebagai hash (bukan plaintext) — cek via Prisma langsung.
+- [x] `AUTH-I-12` `requireAuth` menyuntik `req.user.id` bertipe `string` dan semua query habit/goal memfilter `ownerId`.
 
 ### Phase 2 — API Inti Habits, Goals, Check-in, Streak (`apps/api`)
 
@@ -80,52 +80,54 @@ Tujuan: kontrak SDD §3.2–§3.4 + aturan bisnis PRD FR-02/FR-03/FR-06/FR-07.
 
 #### 2.2 Integration — Habits CRUD
 
-- [ ] `HAB-I-01` `POST /habits` POSITIVE valid -> 201 + tersimpan dengan `ownerId` benar.
-- [ ] `HAB-I-02` `POST /habits` NEGATIVE valid -> 201.
-- [ ] `HAB-I-03` `POST /habits` title kosong / type invalid -> 400 `VALIDATION_ERROR`.
-- [ ] `HAB-I-04` `GET /habits` hanya mengembalikan milik user login + memuat status hari ini.
-- [ ] `HAB-I-05` `GET /habits/:id` milik sendiri -> 200 + streak ringkas.
-- [ ] `HAB-I-06` `GET /habits/:id` milik user lain -> 404.
-- [ ] `HAB-I-07` `PATCH /habits/:id` ubah title/description -> 200; type tidak boleh diganti diam-diam bila diputuskan immutable (atau 400 bila ditolak).
-- [ ] `HAB-I-08` `PATCH /habits/:id` milik orang lain -> 404.
-- [ ] `HAB-I-09` `DELETE /habits/:id` -> 204 + check-in ikut terhapus + join `GoalHabit` ikut terhapus, goal lain tetap ada.
+- [x] `HAB-I-01` `POST /habits` POSITIVE valid -> 201 + tersimpan dengan `ownerId` benar.
+- [x] `HAB-I-02` `POST /habits` NEGATIVE valid -> 201.
+- [x] `HAB-I-03` `POST /habits` title kosong / type invalid -> 400 `VALIDATION_ERROR`.
+- [x] `HAB-I-04` `GET /habits` hanya mengembalikan milik user login + `checkIn`, `checkedIn`, dan ringkasan streak untuk tanggal yang diminta (default WIB hari ini).
+- [x] `HAB-I-05` `GET /habits/:id` milik sendiri -> 200 + streak ringkas.
+- [x] `HAB-I-10` Malformed UUID pada path habit -> 400 `VALIDATION_ERROR`; UUID valid yang tidak ada atau bukan milik user -> 404.
+- [x] `HAB-I-06` `GET /habits/:id` milik user lain -> 404.
+- [x] `HAB-I-07` `PATCH /habits/:id` ubah title/description -> 200; schema menolak field `type` sebagai input tambahan.
+- [x] `HAB-I-08` `PATCH /habits/:id` milik orang lain -> 404.
+- [x] `HAB-I-09` `DELETE /habits/:id` -> 204 + check-in ikut terhapus + join `GoalHabit` ikut terhapus, goal lain tetap ada.
 
 #### 2.3 Integration — Check-in dan Undo
 
-- [ ] `CHK-I-01` `POST /habits/:id/check-in` tanpa body (hari ini WIB) -> 200 `{ habitId, date, streak }`.
-- [ ] `CHK-I-02` Check-in ganda di hari sama -> 200 hasil identik, tidak ada baris ganda (unique `habitId+date`), streak tidak naik 2x.
-- [ ] `CHK-I-03` Check-in habit NEGATIVE memakai endpoint sama dengan semantik DONE = hari bersih.
-- [ ] `CHK-I-04` Check-in dengan `date` masa depan WIB -> 422 `FUTURE_DATE`.
-- [ ] `CHK-I-05` Backfill kemarin / >7 hari lalu (default MVP) -> 422 `BACKFILL_NOT_ALLOWED`.
-- [ ] `CHK-I-06` Check-in habit milik orang lain -> 404.
-- [ ] `CHK-I-07` `DELETE /habits/:id/check-in?date=hari-ini` (undo) -> 204 + streak turun saat dihitung ulang.
-- [ ] `CHK-I-08` Undo tanggal selain hari ini (MVP) -> 422/404 sesuai keputusan.
-- [ ] `CHK-I-09` Undo check-in yang tidak ada -> 404 dengan envelope baku.
+- [x] `CHK-I-01` `POST /habits/:id/check-in` tanpa body (hari ini WIB) -> 200 `{ habitId, date, streak }`.
+- [x] `CHK-I-02` Check-in ganda di hari sama -> 200 hasil identik, tidak ada baris ganda (unique `habitId+date`), streak tidak naik 2x.
+- [x] `CHK-I-03` Check-in habit NEGATIVE memakai endpoint sama dengan semantik DONE = hari bersih.
+- [x] `CHK-I-04` Check-in dengan `date` masa depan WIB -> 422 `FUTURE_DATE`.
+- [x] `CHK-I-05` Backfill kemarin / >7 hari lalu (default MVP) -> 422 `BACKFILL_NOT_ALLOWED`.
+- [x] `CHK-I-06` Check-in habit milik orang lain -> 404.
+- [x] `CHK-I-07` `DELETE /habits/:id/check-in?date=hari-ini` (undo) -> 204 + streak turun saat dihitung ulang.
+- [x] `CHK-I-08` Undo tanggal lampau atau masa depan -> 422 (`BACKFILL_NOT_ALLOWED` atau `FUTURE_DATE`).
+- [x] `CHK-I-09` Undo check-in yang tidak ada -> 204 idempotent tanpa body.
 
 #### 2.4 Integration — Goals dan relasi many-to-many
 
-- [ ] `GOAL-I-01` `POST /goals` dengan `habitIds` existing milik sendiri -> 201 + join terbentuk.
-- [ ] `GOAL-I-02` `POST /goals` tanpa `habitIds` dan tanpa `newHabits` -> 422 pesan "minimal 1 habit".
-- [ ] `GOAL-I-03` `POST /goals` dengan `newHabits` inline -> 201 + habit baru terbuat dengan `ownerId` sama + join terbentuk (transaksi atomik).
-- [ ] `GOAL-I-04` `POST /goals` campuran `habitIds` + `newHabits` (build+break) -> 201.
-- [ ] `GOAL-I-05` `POST /goals` memakai `habitId` milik user lain -> 404/422, goal tidak terbuat setengah jalan.
-- [ ] `GOAL-I-06` `GET /goals` memuat `habitCount` + progres per goal.
-- [ ] `GOAL-I-07` `GET /goals/:id` memuat daftar habits + progres (`weeklyCompletionPct`, `perHabit`).
-- [ ] `GOAL-I-08` `PATCH /goals/:id` ubah title/description/deadline -> 200 dan tidak mengubah streak habit.
-- [ ] `GOAL-I-09` `DELETE /goals/:id` -> 204 + habit dan check-in tetap utuh (hanya join dihapus); streak habit tidak berubah.
-- [ ] `GOAL-I-10` `POST /goals/:id/habits` assign habit existing -> 200; assign ganda idempotent 200 tanpa duplikat.
-- [ ] `GOAL-I-11` Assign habit milik orang lain -> 404.
-- [ ] `GOAL-I-12` `DELETE /goals/:id/habits/:habitId` unassign satu dari banyak -> 200.
-- [ ] `GOAL-I-13` Unassign habit terakhir dalam goal -> 422 (goal tidak boleh 0 habit).
-- [ ] `GOAL-I-14` Error goal selalu envelope `{ error: { code, message, details? } }` untuk 400/401/404/422.
+- [x] `GOAL-I-01` `POST /goals` dengan `habitIds` existing milik sendiri -> 201 + join terbentuk.
+- [x] `GOAL-I-02` `POST /goals` tanpa `habitIds` dan tanpa `newHabits` -> 422 pesan "minimal 1 habit".
+- [x] `GOAL-I-03` `POST /goals` dengan `newHabits` inline -> 201 + habit baru terbuat dengan `ownerId` sama + join terbentuk (transaksi atomik).
+- [x] `GOAL-I-04` `POST /goals` campuran `habitIds` + `newHabits` (build+break) -> 201.
+- [x] `GOAL-I-05` `POST /goals` memakai `habitId` milik user lain -> 404 dan goal tidak terbuat setengah jalan.
+- [x] `GOAL-I-15` `habitIds` duplikat saat create goal -> 400 `VALIDATION_ERROR`.
+- [x] `GOAL-I-06` `GET /goals` memuat `habitCount` + progres per goal.
+- [x] `GOAL-I-07` `GET /goals/:id` memuat daftar habits + progres (`weeklyCompletionPct`, `perHabit`).
+- [x] `GOAL-I-08` `PATCH /goals/:id` ubah title/description/deadline -> 200 dan tidak mengubah streak habit.
+- [x] `GOAL-I-09` `DELETE /goals/:id` -> 204 + habit dan check-in tetap utuh (hanya join dihapus); streak habit tidak berubah.
+- [x] `GOAL-I-10` `POST /goals/:id/habits` assign habit existing -> 200; assign ganda idempotent 200 tanpa duplikat.
+- [x] `GOAL-I-11` Assign habit milik orang lain -> 404.
+- [x] `GOAL-I-12` `DELETE /goals/:id/habits/:habitId` unassign satu dari banyak -> 204 tanpa body.
+- [x] `GOAL-I-13` Unassign habit terakhir dalam goal -> 422 (goal tidak boleh 0 habit).
+- [x] `GOAL-I-14` Error goal selalu envelope `{ error: { code, message, details? } }` untuk 400/401/404/422.
 
 #### 2.5 Integration — Streak endpoints
 
-- [ ] `STRK-I-01` `GET /habits/:id/streak?range=daily` -> `{ current, longest, lastDoneDate }` konsisten dengan unit calc.
-- [ ] `STRK-I-02` `GET /habits/:id/streak?range=weekly&week=yyyy-mm-dd` menormalisasi ke Senin + `{ done, miss, allowance: 3, remaining, days[7] }`.
-- [ ] `STRK-I-03` Weekly `remaining = max(0, 3 - miss)`; `miss > 3` tetap 0, bukan negatif.
-- [ ] `STRK-I-04` `week` invalid -> 400 `VALIDATION_ERROR`.
-- [ ] `STRK-I-05` Streak habit milik orang lain -> 404.
+- [x] `STRK-I-01` `GET /habits/:id/streak?range=daily` -> `{ current, longest, lastDoneDate }` konsisten dengan kalkulasi jendela 90 hari.
+- [x] `STRK-I-02` `GET /habits/:id/streak?range=weekly&week=yyyy-mm-dd` menormalisasi ke Senin + `{ done, miss, allowance: 3, remaining, days[7] }`.
+- [x] `STRK-I-03` Weekly `remaining = max(0, 3 - miss)`; `miss > 3` tetap 0, bukan negatif.
+- [x] `STRK-I-04` `week` invalid -> 400 `VALIDATION_ERROR`.
+- [x] `STRK-I-05` Streak habit milik orang lain -> 404.
 
 ### Phase 3 — UI Next.js (React Testing Library)
 

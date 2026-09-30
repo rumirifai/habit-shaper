@@ -1,10 +1,10 @@
 # SAD — Habit Shaper (Software Architecture Document)
 
-| Field | Isi |
-|---|---|
-| Versi | 1.0 (2026-09-23) |
-| Stack | Next.js + Express + PostgreSQL + Prisma + Docker Compose, TypeScript strict |
-| Gaya arsitektur | Client–Server monolit modular (2 services + 1 DB), REST JSON |
+| Field           | Isi                                                                         |
+| --------------- | --------------------------------------------------------------------------- |
+| Versi           | 1.0 (2026-09-23)                                                            |
+| Stack           | Next.js + Express + PostgreSQL + Prisma + Docker Compose, TypeScript strict |
+| Gaya arsitektur | Client–Server monolit modular (2 services + 1 DB), REST JSON                |
 
 ## 1. Diagram Arsitektur
 
@@ -33,24 +33,24 @@ flowchart TB
 
 Services:
 
-| Service | Image/base | Port | Env penting |
-|---|---|---|---|
-| `web` | `node:20-alpine` + Next build | 3000→3000 | `NEXT_PUBLIC_API_URL`, `API_INTERNAL_URL` |
-| `api` | `node:20-alpine` + Express | 4000→4000 | `DATABASE_URL`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `TZ=Asia/Jakarta` |
-| `db` | `postgres:16-alpine` | 5432 | `POSTGRES_USER/PASSWORD/DB`, volume `pgdata` |
+| Service | Image/base                    | Port      | Env penting                                                                  |
+| ------- | ----------------------------- | --------- | ---------------------------------------------------------------------------- |
+| `web`   | `node:20-alpine` + Next build | 3000→3000 | `NEXT_PUBLIC_API_URL`, `API_INTERNAL_URL`                                    |
+| `api`   | `node:20-alpine` + Express    | 4000→4000 | `DATABASE_URL`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `TZ=Asia/Jakarta` |
+| `db`    | `postgres:16-alpine`          | 5432      | `POSTGRES_USER/PASSWORD/DB`, volume `pgdata`                                 |
 
 Alasan container: setup satu perintah, parity dev/prod, isolasi versi Node & PG.
 
 ## 2. Tech Stack & Alasan Teknis
 
-| Lapisan | Pilihan | Alasan | Konsekuensi |
-|---|---|---|---|
-| Frontend | Next.js (App Router, RSC secukupnya) | SSR/SSG ringan, routing bawaan, fetch server-to-API mudah, tetap simple tanpa SPA framework ekstra | Perlu pisahkan `NEXT_PUBLIC_*` vs server env; hindari client state berat |
-| Backend | Express | Minimal, ringan, sesuai prinsip lightweight; middleware ecosystem matang | Validasi & struktur modular manual (dibantu Zod + router per domain) |
-| ORM | Prisma | Type-safe, migrasi versioned, cocok untuk relasi many-to-many + unique constraint | Perlu `prisma generate` di build; N+1 harus dihindari manual (`include` selektif) |
-| DB | PostgreSQL 16 | Constraint kuat (unique, FK, cascade), timezone-aware `timestamptz`/`date`, Andal untuk streak query | Wajib set `TZ` + normalisasi tanggal di backend |
-| Bahasa | TypeScript strict | Satu bahasa end-to-end, cegah bug `any`, DTO shared types | Disiplin lint + Zod (lihat §9) |
-| Deploy | Docker + Compose | Lightweight vs K8s; cukup untuk MVP 1 host | Skala vertikal dulu; skala horizontal butuh sticky/refresh store |
+| Lapisan  | Pilihan                              | Alasan                                                                                               | Konsekuensi                                                                       |
+| -------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Frontend | Next.js (App Router, RSC secukupnya) | SSR/SSG ringan, routing bawaan, fetch server-to-API mudah, tetap simple tanpa SPA framework ekstra   | Perlu pisahkan `NEXT_PUBLIC_*` vs server env; hindari client state berat          |
+| Backend  | Express                              | Minimal, ringan, sesuai prinsip lightweight; middleware ecosystem matang                             | Validasi & struktur modular manual (dibantu Zod + router per domain)              |
+| ORM      | Prisma                               | Type-safe, migrasi versioned, cocok untuk relasi many-to-many + unique constraint                    | Perlu `prisma generate` di build; N+1 harus dihindari manual (`include` selektif) |
+| DB       | PostgreSQL 16                        | Constraint kuat (unique, FK, cascade), timezone-aware `timestamptz`/`date`, Andal untuk streak query | Wajib set `TZ` + normalisasi tanggal di backend                                   |
+| Bahasa   | TypeScript strict                    | Satu bahasa end-to-end, cegah bug `any`, DTO shared types                                            | Disiplin lint + Zod (lihat §9)                                                    |
+| Deploy   | Docker + Compose                     | Lightweight vs K8s; cukup untuk MVP 1 host                                                           | Skala vertikal dulu; skala horizontal butuh sticky/refresh store                  |
 
 Keputusan ini selaras dengan tujuan “sesuai tujuan awal tanpa fitur tambahan”.
 
@@ -84,7 +84,7 @@ Contoh base URL:
 - Register: `POST /auth/register { email, password, name? }` → hash argon2.
 - Login: `POST /auth/login` → set refresh cookie + kembalikan access token singkat.
 - Refresh: `POST /auth/refresh` (baca cookie) → access baru.
-- Logout: `POST /auth/logout` → clear cookie + blacklist/invalidate refresh (MVP: hapus dari store atau putar versi).
+- Logout: `POST /auth/logout` → clear cookie + increment `User.tokenVersion` untuk mencabut access dan refresh token yang sudah diterbitkan.
 - Otorisasi: middleware `requireAuth` → `req.user = { id: string }`; setiap handler habit/goal/check-in filter by owner. Return 404 (bukan 403) untuk resource milik orang lain agar tidak bocor enumerasi.
 
 ## 5. Struktur Repo (monorepo ringan)
@@ -106,13 +106,13 @@ Dipilih **monorepo 1 repo** (ADR-01) agar perubahan kontrak API + UI atomik dan 
 
 ## 6. ADR-lite (Keputusan Arsitektur)
 
-| ID | Keputusan | Alternatif ditolak | Alasan |
-|---|---|---|---|
-| ADR-01 | Monorepo `apps/*` | Polyrepo | Kontrak API berubah bersama UI; CI/CD 1 alur |
-| ADR-02 | Prisma | Raw SQL / Drizzle | Migrasi + type-safety + many-to-many cepat; tim kecil |
-| ADR-03 | REST JSON | tRPC/GraphQL | Paling simple & tooling universal; tRPC mengikat FE-BE TS monorepo terlalu erat untuk MVP yang mungkin dipisah deploy |
-| ADR-04 | Streak computed | Counter kolom `currentStreak` | Counter rawan drift (race, backfill, hapus). Computed = single source of truth = CheckIn. Cache hanya jika terbukti lambat (lihat SDD §2) |
-| ADR-05 | JWT + refresh cookie | Session DB / OAuth | Cukup untuk MVP multi-user tanpa infra tambahan; OAuth masuk backlog |
+| ID     | Keputusan            | Alternatif ditolak            | Alasan                                                                                                                                    |
+| ------ | -------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| ADR-01 | Monorepo `apps/*`    | Polyrepo                      | Kontrak API berubah bersama UI; CI/CD 1 alur                                                                                              |
+| ADR-02 | Prisma               | Raw SQL / Drizzle             | Migrasi + type-safety + many-to-many cepat; tim kecil                                                                                     |
+| ADR-03 | REST JSON            | tRPC/GraphQL                  | Paling simple & tooling universal; tRPC mengikat FE-BE TS monorepo terlalu erat untuk MVP yang mungkin dipisah deploy                     |
+| ADR-04 | Streak computed      | Counter kolom `currentStreak` | Counter rawan drift (race, backfill, hapus). Computed = single source of truth = CheckIn. Cache hanya jika terbukti lambat (lihat SDD §2) |
+| ADR-05 | JWT + refresh cookie | Session DB / OAuth            | Cukup untuk MVP multi-user tanpa infra tambahan; OAuth masuk backlog                                                                      |
 
 ## 7. Task Breakdown — Rencana Bertahap (Phase)
 
@@ -120,24 +120,26 @@ Dipilih **monorepo 1 repo** (ADR-01) agar perubahan kontrak API + UI atomik dan 
 
 ### Phase 0 — Setup & Kontrak (0.5–1 hari)
 
-- [ ] Inisialisasi monorepo, `tsconfig` strict + `noUncheckedIndexedAccess`, ESLint + Prettier.
-- [ ] `Dockerfile.web`, `Dockerfile.api`, `docker-compose.yml` (dev) bisa `up`.
-- [ ] Healthcheck: `GET /health` → `{ status: "ok" }`.
+- [x] Inisialisasi monorepo, `tsconfig` strict + `noUncheckedIndexedAccess`, ESLint + Prettier.
+- [x] `Dockerfile.web`, `Dockerfile.api`, `docker-compose.yml` (dev) bisa `up`.
+- [x] Healthcheck: `GET /health` → `{ status: "ok" }`.
 - **HITL gate:** Compose up hijau + lint lolos.
 
 ### Phase 1 — DB + Auth (1–2 hari)
 
-- [ ] Model Prisma: User, Habit, Goal, GoalHabit, CheckIn (+ index).
-- [ ] Migrasi awal + seed 1 user demo (opsional, non-prod).
-- [ ] Auth register/login/refresh/logout + `requireAuth` + isolasi owner.
+- [x] Model Prisma: User, Habit, Goal, GoalHabit, CheckIn (+ index).
+- [x] Migrasi awal + seed 1 user demo (opsional, non-prod).
+- [x] Auth register/login/refresh/logout + `requireAuth` + isolasi owner.
 - **HITL gate:** review skema ERD + uji login multi-user.
 
 ### Phase 2 — API Inti (2–3 hari)
 
-- [ ] CRUD `/habits`, CRUD `/goals`, assign/unassign `/goals/:id/habits` (validasi min 1 habit saat create goal).
-- [ ] `POST /habits/:id/check-in`, `DELETE /habits/:id/check-in` (undo hari sama), `GET /habits/:id/streak`, `GET /habits?date=`.
-- [ ] Error envelope + Zod middleware + uji manual via curl/REST client.
+- [x] CRUD `/habits`, CRUD `/goals`, assign/unassign `/goals/:id/habits` (validasi min 1 habit saat create goal).
+- [x] `POST /habits/:id/check-in`, `DELETE /habits/:id/check-in` (undo hari sama), `GET /habits/:id/streak`, `GET /habits?date=`.
+- [x] Error envelope + Zod middleware + uji manual via curl/REST client.
 - **HITL gate:** cek kontrak endpoint vs SDD §3.
+
+Catatan kontrak backend: validasi input dilakukan melalui Zod middleware pada body, query, dan UUID route params. Malformed UUID menghasilkan 400; UUID valid yang tidak ada atau bukan milik user menghasilkan 404. Login dan refresh mengembalikan `{ accessToken, user }`. Goal tanpa habit menghasilkan 422; check-in undo tanpa baris dan unassign sukses menghasilkan 204.
 
 ### Phase 3 — UI Next.js (2–3 hari)
 
@@ -200,10 +202,10 @@ Estimasi total: **~7–12 hari kerja** 1 orang (tergantung kecepatan review).
 
 ## 10. NFR Mapping
 
-| NFR | Strategi arsitektur |
-|---|---|
-| Lightweight | 2 services + PG; tanpa Redis/queue di MVP |
-| Simple | REST + Zod + Prisma; UI server-first |
-| Performan | Index `(habitId, date)`, `(ownerId)`; streak query per-user terbatas 30–90 hari |
-| Aman (dasar) | Hash password, httpOnly cookie, isolasi owner, rate-limit login |
-| Portabel | Compose + env file; migrasi `prisma migrate deploy` saat start API |
+| NFR          | Strategi arsitektur                                                             |
+| ------------ | ------------------------------------------------------------------------------- |
+| Lightweight  | 2 services + PG; tanpa Redis/queue di MVP                                       |
+| Simple       | REST + Zod + Prisma; UI server-first                                            |
+| Performan    | Index `(habitId, date)`, `(ownerId)`; streak query per-user terbatas 30–90 hari |
+| Aman (dasar) | Hash password, httpOnly cookie, isolasi owner, rate-limit login                 |
+| Portabel     | Compose + env file; migrasi `prisma migrate deploy` saat start API              |
