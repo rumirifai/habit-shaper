@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
-import { createHabitSchema, updateHabitSchema } from "../schemas/habits.js";
+import { createHabitSchema, listHabitsQuerySchema, updateHabitSchema } from "../schemas/habits.js";
+import { dateOnlyToUTC } from "../utils/date.js";
 
 function todayWibDate(): Date {
   const date = new Intl.DateTimeFormat("en-CA", {
@@ -22,14 +23,21 @@ function habitIdFrom(req: Request): string | null {
 }
 
 export async function listHabits(req: Request, res: Response): Promise<void> {
+  const parsed = listHabitsQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: { code: "VALIDATION_ERROR", message: "Query daftar habit tidak valid.", details: parsed.error.flatten() },
+    });
+    return;
+  }
   try {
     const ownerId = req.user?.id;
     if (ownerId === undefined) return;
-    const today = todayWibDate();
+    const selectedDate = parsed.data.date === undefined ? todayWibDate() : dateOnlyToUTC(parsed.data.date);
     const habits = await prisma.habit.findMany({
       where: { ownerId },
       orderBy: { createdAt: "asc" },
-      include: { checkIns: { where: { date: today }, select: { status: true } } },
+      include: { checkIns: { where: { date: selectedDate }, select: { status: true } } },
     });
     res.status(200).json({
       habits: habits.map(({ checkIns, ...habit }) => ({
@@ -38,8 +46,10 @@ export async function listHabits(req: Request, res: Response): Promise<void> {
         checkedInToday: checkIns.some((checkIn) => checkIn.status === "DONE"),
       })),
     });
-  } catch (_error: unknown) {
-    res.status(500).json({ error: { code: "INTERNAL_SERVER_ERROR", message: "Terjadi kesalahan internal." } });
+  } catch {
+    res
+      .status(500)
+      .json({ error: { code: "INTERNAL_SERVER_ERROR", message: "Terjadi kesalahan internal." } });
   }
 }
 
@@ -51,18 +61,26 @@ export async function getHabit(req: Request, res: Response): Promise<void> {
     const habit = await prisma.habit.findFirst({ where: { id, ownerId } });
     if (habit === null) return notFound(res);
     res.status(200).json({ habit });
-  } catch (_error: unknown) {
-    res.status(500).json({ error: { code: "INTERNAL_SERVER_ERROR", message: "Terjadi kesalahan internal." } });
+  } catch {
+    res
+      .status(500)
+      .json({ error: { code: "INTERNAL_SERVER_ERROR", message: "Terjadi kesalahan internal." } });
   }
 }
 
 export async function createHabit(req: Request, res: Response): Promise<void> {
+  const parsed = createHabitSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: {
+        code: "VALIDATION_ERROR",
+        message: "Input habit tidak valid.",
+        details: parsed.error.flatten(),
+      },
+    });
+    return;
+  }
   try {
-    const parsed = createHabitSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: { code: "VALIDATION_ERROR", message: "Input habit tidak valid.", details: parsed.error.flatten() } });
-      return;
-    }
     const ownerId = req.user?.id;
     if (ownerId === undefined) return;
     const habit = await prisma.habit.create({
@@ -74,18 +92,26 @@ export async function createHabit(req: Request, res: Response): Promise<void> {
       },
     });
     res.status(201).json({ habit });
-  } catch (_error: unknown) {
-    res.status(500).json({ error: { code: "INTERNAL_SERVER_ERROR", message: "Terjadi kesalahan internal." } });
+  } catch {
+    res
+      .status(500)
+      .json({ error: { code: "INTERNAL_SERVER_ERROR", message: "Terjadi kesalahan internal." } });
   }
 }
 
 export async function updateHabit(req: Request, res: Response): Promise<void> {
+  const parsed = updateHabitSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: {
+        code: "VALIDATION_ERROR",
+        message: "Input habit tidak valid.",
+        details: parsed.error.flatten(),
+      },
+    });
+    return;
+  }
   try {
-    const parsed = updateHabitSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: { code: "VALIDATION_ERROR", message: "Input habit tidak valid.", details: parsed.error.flatten() } });
-      return;
-    }
     const ownerId = req.user?.id;
     const id = habitIdFrom(req);
     if (ownerId === undefined || id === null) return notFound(res);
@@ -97,8 +123,10 @@ export async function updateHabit(req: Request, res: Response): Promise<void> {
     const habit = await prisma.habit.findFirst({ where: { id, ownerId } });
     if (habit === null) return notFound(res);
     res.status(200).json({ habit });
-  } catch (_error: unknown) {
-    res.status(500).json({ error: { code: "INTERNAL_SERVER_ERROR", message: "Terjadi kesalahan internal." } });
+  } catch {
+    res
+      .status(500)
+      .json({ error: { code: "INTERNAL_SERVER_ERROR", message: "Terjadi kesalahan internal." } });
   }
 }
 
@@ -110,7 +138,9 @@ export async function deleteHabit(req: Request, res: Response): Promise<void> {
     const result = await prisma.habit.deleteMany({ where: { id, ownerId } });
     if (result.count === 0) return notFound(res);
     res.status(204).end();
-  } catch (_error: unknown) {
-    res.status(500).json({ error: { code: "INTERNAL_SERVER_ERROR", message: "Terjadi kesalahan internal." } });
+  } catch {
+    res
+      .status(500)
+      .json({ error: { code: "INTERNAL_SERVER_ERROR", message: "Terjadi kesalahan internal." } });
   }
 }
