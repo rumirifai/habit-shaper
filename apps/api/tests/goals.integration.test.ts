@@ -14,10 +14,16 @@ type GoalResponse = {
     deadline: string | null;
     habitLinks: Array<{ habit: { id: string; title: string; type: "POSITIVE" | "NEGATIVE" } }>;
     habitCount?: number;
-    progress?: { weeklyCompletionPct: number; perHabit: Array<{ habitId: string; done: number; miss: number }> };
+    progress?: {
+      weeklyCompletionPct: number;
+      perHabit: Array<{ habitId: string; done: number; miss: number }>;
+    };
   };
   habitCount?: number;
-  progress?: { weeklyCompletionPct: number; perHabit: Array<{ habitId: string; done: number; miss: number }> };
+  progress?: {
+    weeklyCompletionPct: number;
+    perHabit: Array<{ habitId: string; done: number; miss: number }>;
+  };
 };
 
 const createdUserIds: string[] = [];
@@ -26,11 +32,15 @@ let sequence = 0;
 async function createUser(): Promise<{ user: RegisteredUser; token: string }> {
   sequence += 1;
   const email = `goal-${Date.now()}-${sequence}@example.com`;
-  const registered = await request(app).post("/api/v1/auth/register").send({ email, password: "correct-horse-123", name: "Goal Test" });
+  const registered = await request(app)
+    .post("/api/v1/auth/register")
+    .send({ email, password: "correct-horse-123", name: "Goal Test" });
   expect(registered.status).toBe(201);
   const user = registered.body.user as RegisteredUser;
   createdUserIds.push(user.id);
-  const loggedIn = await request(app).post("/api/v1/auth/login").send({ email, password: "correct-horse-123" });
+  const loggedIn = await request(app)
+    .post("/api/v1/auth/login")
+    .send({ email, password: "correct-horse-123" });
   expect(loggedIn.status).toBe(200);
   return { user, token: (loggedIn.body as LoginBody).accessToken };
 }
@@ -46,14 +56,22 @@ async function createHabit(ownerId: string, title = "Goal habit"): Promise<strin
   return habit.id;
 }
 
-async function createGoal(token: string, habitIds: string[], title = "Test goal"): Promise<GoalResponse["goal"]> {
-  const response = await request(app).post("/api/v1/goals").set("Authorization", `Bearer ${token}`).send({ title, habitIds });
+async function createGoal(
+  token: string,
+  habitIds: string[],
+  title = "Test goal",
+): Promise<GoalResponse["goal"]> {
+  const response = await request(app)
+    .post("/api/v1/goals")
+    .set("Authorization", `Bearer ${token}`)
+    .send({ title, habitIds });
   expect(response.status).toBe(201);
   return (response.body as GoalResponse).goal;
 }
 
 afterEach(async () => {
-  if (createdUserIds.length > 0) await prisma.user.deleteMany({ where: { id: { in: createdUserIds.splice(0) } } });
+  if (createdUserIds.length > 0)
+    await prisma.user.deleteMany({ where: { id: { in: createdUserIds.splice(0) } } });
 });
 
 describe("Goals integration", () => {
@@ -61,33 +79,70 @@ describe("Goals integration", () => {
     const { user, token } = await createUser();
     const habitId = await createHabit(user.id);
     const goal = await createGoal(token, [habitId]);
-    expect(await prisma.goalHabit.findUnique({ where: { goalId_habitId: { goalId: goal.id, habitId } } })).not.toBeNull();
+    expect(
+      await prisma.goalHabit.findUnique({
+        where: { goalId_habitId: { goalId: goal.id, habitId } },
+      }),
+    ).not.toBeNull();
   });
 
   it("GOAL-I-02 POST /goals tanpa habitIds/newHabits -> menolak dengan pesan minimal 1 habit", async () => {
     const { token } = await createUser();
-    const response = await request(app).post("/api/v1/goals").set("Authorization", `Bearer ${token}`).send({ title: "Empty goal" });
-    expect([400, 422]).toContain(response.status);
-    expect(errorBody(response.body).error.message).toMatch(/Input goal tidak valid/i);
+    const response = await request(app)
+      .post("/api/v1/goals")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Empty goal" });
+    expect(response.status).toBe(422);
+    expect(errorBody(response.body).error.code).toBe("UNPROCESSABLE_ENTITY");
+    expect(errorBody(response.body).error.message).toMatch(/minimal 1 habit/i);
+  });
+
+  it("GOAL-I-15 POST /goals dengan habitIds duplikat -> 400 VALIDATION_ERROR", async () => {
+    const { user, token } = await createUser();
+    const habitId = await createHabit(user.id);
+    const response = await request(app)
+      .post("/api/v1/goals")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "Duplicate IDs",
+        habitIds: [habitId, habitId],
+      });
+    expect(response.status).toBe(400);
+    expect(errorBody(response.body).error.code).toBe("VALIDATION_ERROR");
   });
 
   it("GOAL-I-03 POST /goals dengan newHabits inline -> goal, habit, dan join dibuat", async () => {
     const { user, token } = await createUser();
-    const response = await request(app).post("/api/v1/goals").set("Authorization", `Bearer ${token}`).send({
-      title: "Inline goal", newHabits: [{ title: "Inline habit", type: "NEGATIVE" }],
-    });
+    const response = await request(app)
+      .post("/api/v1/goals")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "Inline goal",
+        newHabits: [{ title: "Inline habit", type: "NEGATIVE" }],
+      });
     expect(response.status).toBe(201);
     const goal = (response.body as GoalResponse).goal;
-    const habit = await prisma.habit.findFirstOrThrow({ where: { ownerId: user.id, title: "Inline habit" } });
-    expect(await prisma.goalHabit.findUnique({ where: { goalId_habitId: { goalId: goal.id, habitId: habit.id } } })).not.toBeNull();
+    const habit = await prisma.habit.findFirstOrThrow({
+      where: { ownerId: user.id, title: "Inline habit" },
+    });
+    expect(
+      await prisma.goalHabit.findUnique({
+        where: { goalId_habitId: { goalId: goal.id, habitId: habit.id } },
+      }),
+    ).not.toBeNull();
   });
 
   it("GOAL-I-04 POST /goals campuran habitIds dan newHabits -> 201 dengan semua relasi", async () => {
     const { user, token } = await createUser();
     const existingId = await createHabit(user.id, "Existing");
-    const response = await request(app).post("/api/v1/goals").set("Authorization", `Bearer ${token}`).send({
-      title: "Mixed goal", habitIds: [existingId], newHabits: [{ title: "New inline", type: "POSITIVE" }],
-    });
+    const response = await request(app)
+      .post("/api/v1/goals")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "Mixed goal",
+        habitIds: [existingId],
+        newHabits: [{ title: "New inline", type: "POSITIVE" }],
+      });
     expect(response.status).toBe(201);
     const goal = (response.body as GoalResponse).goal;
     expect(await prisma.goalHabit.count({ where: { goalId: goal.id } })).toBe(2);
@@ -98,7 +153,10 @@ describe("Goals integration", () => {
     const outsider = await createUser();
     const foreignHabitId = await createHabit(owner.user.id);
     const before = await prisma.goal.count({ where: { ownerId: outsider.user.id } });
-    const response = await request(app).post("/api/v1/goals").set("Authorization", `Bearer ${outsider.token}`).send({ title: "Invalid", habitIds: [foreignHabitId] });
+    const response = await request(app)
+      .post("/api/v1/goals")
+      .set("Authorization", `Bearer ${outsider.token}`)
+      .send({ title: "Invalid", habitIds: [foreignHabitId] });
     expect([404, 422]).toContain(response.status);
     errorBody(response.body);
     expect(await prisma.goal.count({ where: { ownerId: outsider.user.id } })).toBe(before);
@@ -108,22 +166,38 @@ describe("Goals integration", () => {
     const { user, token } = await createUser();
     const habitId = await createHabit(user.id);
     await createGoal(token, [habitId]);
-    const response = await request(app).get("/api/v1/goals").set("Authorization", `Bearer ${token}`);
+    const response = await request(app)
+      .get("/api/v1/goals")
+      .set("Authorization", `Bearer ${token}`);
     expect(response.status).toBe(200);
-    expect(response.body.goals[0]).toMatchObject({ habitCount: 1, progress: { weeklyCompletionPct: expect.any(Number), perHabit: [{ habitId, done: expect.any(Number), miss: expect.any(Number) }] } });
+    expect(response.body.goals[0]).toMatchObject({
+      habitCount: 1,
+      progress: {
+        weeklyCompletionPct: expect.any(Number),
+        perHabit: [{ habitId, done: expect.any(Number), miss: expect.any(Number) }],
+      },
+    });
   });
 
   it("GOAL-I-07 GET /goals/:id -> memuat habits dan metrik progres", async () => {
     const { user, token } = await createUser();
     const habitId = await createHabit(user.id);
     const goal = await createGoal(token, [habitId]);
-    const response = await request(app).get(`/api/v1/goals/${goal.id}`).set("Authorization", `Bearer ${token}`);
+    const response = await request(app)
+      .get(`/api/v1/goals/${goal.id}`)
+      .set("Authorization", `Bearer ${token}`);
     expect(response.status).toBe(200);
     const body = response.body as GoalResponse;
     expect(body.habitCount).toBe(1);
     expect(body.goal.habitLinks.map(({ habit }) => habit.id)).toContain(habitId);
-    expect(body.progress?.weeklyCompletionPct ?? body.goal.progress?.weeklyCompletionPct).toEqual(expect.any(Number));
-    expect(body.progress?.perHabit ?? body.goal.progress?.perHabit).toEqual(expect.arrayContaining([expect.objectContaining({ habitId, done: expect.any(Number), miss: expect.any(Number) })]));
+    expect(body.progress?.weeklyCompletionPct ?? body.goal.progress?.weeklyCompletionPct).toEqual(
+      expect.any(Number),
+    );
+    expect(body.progress?.perHabit ?? body.goal.progress?.perHabit).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ habitId, done: expect.any(Number), miss: expect.any(Number) }),
+      ]),
+    );
   });
 
   it("GOAL-I-08 PATCH /goals/:id mengubah field goal tanpa mengubah streak/check-in", async () => {
@@ -131,9 +205,16 @@ describe("Goals integration", () => {
     const habitId = await createHabit(user.id);
     const goal = await createGoal(token, [habitId]);
     await prisma.checkIn.create({ data: { habitId, date: new Date("2026-09-28T00:00:00.000Z") } });
-    const response = await request(app).patch(`/api/v1/goals/${goal.id}`).set("Authorization", `Bearer ${token}`).send({ title: "Updated", description: "Changed", deadline: "2026-12-31" });
+    const response = await request(app)
+      .patch(`/api/v1/goals/${goal.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Updated", description: "Changed", deadline: "2026-12-31" });
     expect(response.status).toBe(200);
-    expect((response.body as GoalResponse).goal).toMatchObject({ title: "Updated", description: "Changed", deadline: expect.any(String) });
+    expect((response.body as GoalResponse).goal).toMatchObject({
+      title: "Updated",
+      description: "Changed",
+      deadline: expect.any(String),
+    });
     expect(await prisma.checkIn.count({ where: { habitId } })).toBe(1);
   });
 
@@ -142,7 +223,9 @@ describe("Goals integration", () => {
     const habitId = await createHabit(user.id);
     const goal = await createGoal(token, [habitId]);
     await prisma.checkIn.create({ data: { habitId, date: new Date("2026-09-28T00:00:00.000Z") } });
-    const response = await request(app).delete(`/api/v1/goals/${goal.id}`).set("Authorization", `Bearer ${token}`);
+    const response = await request(app)
+      .delete(`/api/v1/goals/${goal.id}`)
+      .set("Authorization", `Bearer ${token}`);
     expect(response.status).toBe(204);
     expect(await prisma.habit.findUnique({ where: { id: habitId } })).not.toBeNull();
     expect(await prisma.checkIn.count({ where: { habitId } })).toBe(1);
@@ -155,8 +238,14 @@ describe("Goals integration", () => {
     const goal = await createGoal(token, [initialHabit]);
     const habitId = await createHabit(user.id, "Assigned");
     const endpoint = `/api/v1/goals/${goal.id}/habits`;
-    expect((await request(app).post(endpoint).set("Authorization", `Bearer ${token}`).send({ habitId })).status).toBe(200);
-    expect((await request(app).post(endpoint).set("Authorization", `Bearer ${token}`).send({ habitId })).status).toBe(200);
+    expect(
+      (await request(app).post(endpoint).set("Authorization", `Bearer ${token}`).send({ habitId }))
+        .status,
+    ).toBe(200);
+    expect(
+      (await request(app).post(endpoint).set("Authorization", `Bearer ${token}`).send({ habitId }))
+        .status,
+    ).toBe(200);
     expect(await prisma.goalHabit.count({ where: { goalId: goal.id, habitId } })).toBe(1);
   });
 
@@ -166,7 +255,10 @@ describe("Goals integration", () => {
     const ownHabit = await createHabit(outsider.user.id);
     const goal = await createGoal(outsider.token, [ownHabit]);
     const foreignHabit = await createHabit(owner.user.id);
-    const response = await request(app).post(`/api/v1/goals/${goal.id}/habits`).set("Authorization", `Bearer ${outsider.token}`).send({ habitId: foreignHabit });
+    const response = await request(app)
+      .post(`/api/v1/goals/${goal.id}/habits`)
+      .set("Authorization", `Bearer ${outsider.token}`)
+      .send({ habitId: foreignHabit });
     expect(response.status).toBe(404);
     expect(errorBody(response.body).error.code).toBe("NOT_FOUND");
   });
@@ -176,17 +268,29 @@ describe("Goals integration", () => {
     const first = await createHabit(user.id, "First");
     const second = await createHabit(user.id, "Second");
     const goal = await createGoal(token, [first, second]);
-    const response = await request(app).delete(`/api/v1/goals/${goal.id}/habits/${first}`).set("Authorization", `Bearer ${token}`);
-    expect([200, 204]).toContain(response.status);
-    expect(await prisma.goalHabit.findUnique({ where: { goalId_habitId: { goalId: goal.id, habitId: first } } })).toBeNull();
-    expect(await prisma.goalHabit.findUnique({ where: { goalId_habitId: { goalId: goal.id, habitId: second } } })).not.toBeNull();
+    const response = await request(app)
+      .delete(`/api/v1/goals/${goal.id}/habits/${first}`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(response.status).toBe(204);
+    expect(
+      await prisma.goalHabit.findUnique({
+        where: { goalId_habitId: { goalId: goal.id, habitId: first } },
+      }),
+    ).toBeNull();
+    expect(
+      await prisma.goalHabit.findUnique({
+        where: { goalId_habitId: { goalId: goal.id, habitId: second } },
+      }),
+    ).not.toBeNull();
   });
 
   it("GOAL-I-13 DELETE habit terakhir -> 422 dan relasi dipertahankan", async () => {
     const { user, token } = await createUser();
     const habitId = await createHabit(user.id);
     const goal = await createGoal(token, [habitId]);
-    const response = await request(app).delete(`/api/v1/goals/${goal.id}/habits/${habitId}`).set("Authorization", `Bearer ${token}`);
+    const response = await request(app)
+      .delete(`/api/v1/goals/${goal.id}/habits/${habitId}`)
+      .set("Authorization", `Bearer ${token}`);
     expect(response.status).toBe(422);
     expect(errorBody(response.body).error.message).toMatch(/minimal 1 habit/i);
     expect(await prisma.goalHabit.count({ where: { goalId: goal.id } })).toBe(1);
@@ -194,19 +298,26 @@ describe("Goals integration", () => {
 
   it("GOAL-I-14 error goal -> envelope baku untuk 400, 401, 404, dan 422", async () => {
     const { token } = await createUser();
-    const invalid = await request(app).post("/api/v1/goals").set("Authorization", `Bearer ${token}`).send({ title: "" });
+    const invalid = await request(app)
+      .post("/api/v1/goals")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "" });
     expect(invalid.status).toBe(400);
     errorBody(invalid.body);
     const unauthenticated = await request(app).get("/api/v1/goals");
     expect(unauthenticated.status).toBe(401);
     errorBody(unauthenticated.body);
-    const missing = await request(app).get("/api/v1/goals/00000000-0000-4000-8000-000000000000").set("Authorization", `Bearer ${token}`);
+    const missing = await request(app)
+      .get("/api/v1/goals/00000000-0000-4000-8000-000000000000")
+      .set("Authorization", `Bearer ${token}`);
     expect(missing.status).toBe(404);
     errorBody(missing.body);
     const { user, token: otherToken } = await createUser();
     const habitId = await createHabit(user.id);
     const goal = await createGoal(otherToken, [habitId]);
-    const lastHabitError = await request(app).delete(`/api/v1/goals/${goal.id}/habits/${habitId}`).set("Authorization", `Bearer ${otherToken}`);
+    const lastHabitError = await request(app)
+      .delete(`/api/v1/goals/${goal.id}/habits/${habitId}`)
+      .set("Authorization", `Bearer ${otherToken}`);
     expect(lastHabitError.status).toBe(422);
     errorBody(lastHabitError.body);
   });

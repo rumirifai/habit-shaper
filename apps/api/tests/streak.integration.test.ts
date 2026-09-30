@@ -8,7 +8,12 @@ import { dateOnlyToUTC, mondayOfWeekWIB, todayWIB } from "../src/utils/date.js";
 type RegisteredUser = { id: string; email: string };
 type LoginBody = { accessToken: string };
 type ErrorBody = { error: { code: string; message: string; details?: unknown } };
-type DailyStreakBody = { habitId: string; current: number; longest: number; lastDoneDate: string | null };
+type DailyStreakBody = {
+  habitId: string;
+  current: number;
+  longest: number;
+  lastDoneDate: string | null;
+};
 type WeeklyStreakBody = {
   habitId: string;
   weekStart: string;
@@ -35,13 +40,17 @@ async function createUser(): Promise<{ user: RegisteredUser; token: string }> {
   const user = registered.body.user as RegisteredUser;
   createdUserIds.push(user.id);
 
-  const loggedIn = await request(app).post("/api/v1/auth/login").send({ email, password: "correct-horse-123" });
+  const loggedIn = await request(app)
+    .post("/api/v1/auth/login")
+    .send({ email, password: "correct-horse-123" });
   expect(loggedIn.status).toBe(200);
   return { user, token: (loggedIn.body as LoginBody).accessToken };
 }
 
 async function createHabit(ownerId: string): Promise<string> {
-  const habit = await prisma.habit.create({ data: { ownerId, title: "Streak habit", type: "POSITIVE" } });
+  const habit = await prisma.habit.create({
+    data: { ownerId, title: "Streak habit", type: "POSITIVE" },
+  });
   return habit.id;
 }
 
@@ -123,7 +132,7 @@ describe("Streak integration", () => {
     const habitId = await createHabit(user.id);
     const requestedWeek = shiftDate(todayWIB(), -10);
     const monday = mondayOfWeekWIB(requestedWeek);
-    const doneDates = await createDoneDates(habitId, [shiftDate(monday, 0), shiftDate(monday, 1)]);
+    await createDoneDates(habitId, [shiftDate(monday, 0), shiftDate(monday, 1)]);
 
     const response = await request(app)
       .get(`/api/v1/habits/${habitId}/streak`)
