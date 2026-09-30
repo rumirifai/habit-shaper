@@ -11,6 +11,9 @@ export const createGoalSchema = z.object({
   if (value.habitIds.length + value.newHabits.length < 1) {
     ctx.addIssue({ code: "custom", message: "Goal wajib punya minimal 1 habit: pilih habit atau buat baru.", path: ["habitIds"] });
   }
+  if (new Set(value.habitIds).size !== value.habitIds.length) {
+    ctx.addIssue({ code: "custom", message: "habitIds tidak boleh berisi ID duplikat.", path: ["habitIds"] });
+  }
 });
 
 export const updateGoalSchema = z.object({
