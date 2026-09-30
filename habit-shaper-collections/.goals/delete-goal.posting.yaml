@@ -5,6 +5,3 @@ auth:
   type: bearer_token
   bearer_token:
     token: $ACCESS_TOKEN
-headers:
-- name: content-type
-  value: application/json

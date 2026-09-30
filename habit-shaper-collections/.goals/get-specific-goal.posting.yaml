@@ -1,4 +1,5 @@
 name: get-specific-goal
+method: GET
 url: http://localhost:4000/api/v1/goals/$GOAL_ID
 auth:
   type: bearer_token

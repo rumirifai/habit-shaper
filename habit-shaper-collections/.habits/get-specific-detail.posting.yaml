@@ -1,4 +1,5 @@
 name: get-specific-habit
+method: GET
 url: http://localhost:4000/api/v1/habits/$HABIT_ID
 auth:
   type: bearer_token

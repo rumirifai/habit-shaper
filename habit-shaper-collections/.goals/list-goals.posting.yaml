@@ -1,4 +1,5 @@
-name: get-goal
+name: list-goals
+method: GET
 url: http://localhost:4000/api/v1/goals/
 auth:
   type: bearer_token

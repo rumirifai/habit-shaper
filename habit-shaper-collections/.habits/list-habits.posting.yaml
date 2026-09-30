@@ -1,4 +1,5 @@
-name: get-habit
+name: list-habits
+method: GET
 url: http://localhost:4000/api/v1/habits/
 auth:
   type: bearer_token

@@ -1,6 +1,6 @@
 name: delete-habit
 method: DELETE
-url: http://localhost:4000/api/v1/habits/4ff12b4d-2439-42e7-9d98-2aca74213941
+url: http://localhost:4000/api/v1/habits/$HABIT_ID
 auth:
   type: bearer_token
   bearer_token:

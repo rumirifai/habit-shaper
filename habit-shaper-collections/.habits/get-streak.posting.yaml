@@ -1,12 +1,10 @@
 name: get-streak
+method: GET
 url: http://localhost:4000/api/v1/habits/$HABIT_ID/streak
 auth:
   type: bearer_token
   bearer_token:
     token: $ACCESS_TOKEN
-headers:
-- name: content-type
-  value: application/json
 params:
 - name: range
   value: weekly
