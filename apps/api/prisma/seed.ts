@@ -19,7 +19,6 @@ async function main(): Promise<void> {
       tokenVersion: 0,
     },
   });
-  // eslint-disable-next-line no-console
   console.log(`[seed] demo user ready: ${user.email}`);
 }
 
