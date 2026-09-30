@@ -2,6 +2,7 @@ import cookieParser from "cookie-parser";
 import express, { type Request, type Response } from "express";
 import { authRouter } from "./routes/auth.js";
 import { habitsRouter } from "./routes/habits.js";
+import { goalsRouter } from "./routes/goals.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -11,6 +12,7 @@ app.get("/health", (_req: Request, res: Response) => res.status(200).json({ stat
 app.get("/api/v1/health", (_req: Request, res: Response) => res.status(200).json({ status: "ok" }));
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/habits", habitsRouter);
+app.use("/api/v1/goals", goalsRouter);
 app.use((req: Request, res: Response) => {
   res.status(404).json({ error: { code: "NOT_FOUND", message: `Route ${req.path} tidak ditemukan.` } });
 });
