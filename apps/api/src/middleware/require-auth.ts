@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { verifyAccessToken } from "../lib/jwt.js";
 import { prisma } from "../lib/prisma.js";
+import { handleApiError, sendApiError } from "../lib/api-error.js";
 
 declare global {
   namespace Express {
@@ -16,9 +17,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   try {
     const claims = token === "" ? null : verifyAccessToken(token);
     if (claims === null) {
-      res.status(401).json({
-        error: { code: "UNAUTHORIZED", message: "Access token tidak valid atau kedaluwarsa." },
-      });
+      sendApiError(res, 401, "UNAUTHORIZED", "Access token tidak valid atau kedaluwarsa.");
       return;
     }
     const user = await prisma.user.findUnique({
@@ -26,15 +25,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       select: { id: true, tokenVersion: true },
     });
     if (user === null || user.tokenVersion !== claims.tokenVersion) {
-      res.status(401).json({
-        error: { code: "SESSION_REVOKED", message: "Sesi sudah dicabut. Silakan login kembali." },
-      });
+      sendApiError(res, 401, "SESSION_REVOKED", "Sesi sudah dicabut. Silakan login kembali.");
       return;
     }
     req.user = { id: user.id };
     next();
-  } catch (e: unknown) {
-    void e;
-    res.status(500).json({ error: { code: "INTERNAL_SERVER_ERROR", message: "Gagal memvalidasi sesi." } });
+  } catch (error: unknown) {
+    handleApiError(req, res, error);
   }
 }

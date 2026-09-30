@@ -22,6 +22,12 @@ export type WeeklyResult = {
   days: Array<{ date: string; status: "DONE" | "MISS" | "PENDING" | "FUTURE" }>;
 };
 
+export type DailyResult = {
+  current: number;
+  longest: number;
+  lastDoneDate: string | null;
+};
+
 export function calcCurrentStreak(checkIns: Date[], today: Date): number {
   const doneDates = new Set(checkIns.map(dateKey));
   const todayKey = dateKey(today);
@@ -45,6 +51,15 @@ export function calcLongestStreak(checkIns: Date[]): number {
     previous = date;
   }
   return longest;
+}
+
+export function calcDailyStreak(checkIns: Date[], today: Date): DailyResult {
+  const dates = [...new Set(checkIns.map(dateKey))].sort();
+  return {
+    current: calcCurrentStreak(checkIns, today),
+    longest: calcLongestStreak(checkIns),
+    lastDoneDate: dates.at(-1) ?? null,
+  };
 }
 
 export function calcWeekly(checkIns: Date[], weekStart: Date): WeeklyResult {

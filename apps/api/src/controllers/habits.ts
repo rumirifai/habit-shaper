@@ -1,146 +1,162 @@
 import type { Request, Response } from "express";
+import { handleApiError, sendApiError } from "../lib/api-error.js";
 import { prisma } from "../lib/prisma.js";
-import { createHabitSchema, listHabitsQuerySchema, updateHabitSchema } from "../schemas/habits.js";
-import { dateOnlyToUTC } from "../utils/date.js";
+import { validatedBody, validatedParams, validatedQuery } from "../middleware/validate-request.js";
+import type { CreateHabitInput, ListHabitsQuery, UpdateHabitInput } from "../schemas/habits.js";
+import type { IdParams } from "../schemas/params.js";
+import { dateOnlyToUTC, todayWIB } from "../utils/date.js";
+import { calcDailyStreak } from "../services/streak.js";
 
-function todayWibDate(): Date {
-  const date = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Jakarta",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-  return new Date(`${date}T00:00:00.000Z`);
+function shiftDate(date: string, days: number): string {
+  const value = dateOnlyToUTC(date);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+function dateKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }
 
 function notFound(res: Response): void {
-  res.status(404).json({ error: { code: "NOT_FOUND", message: "Habit tidak ditemukan." } });
-}
-
-function habitIdFrom(req: Request): string | null {
-  const id = req.params.id;
-  return typeof id === "string" ? id : null;
+  sendApiError(res, 404, "NOT_FOUND", "Habit tidak ditemukan.");
 }
 
 export async function listHabits(req: Request, res: Response): Promise<void> {
-  const parsed = listHabitsQuerySchema.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: { code: "VALIDATION_ERROR", message: "Query daftar habit tidak valid.", details: parsed.error.flatten() },
-    });
-    return;
-  }
+  const { date: requestedDate } = validatedQuery<ListHabitsQuery>(res);
+  const today = todayWIB();
+  const selectedDate = requestedDate ?? today;
+  const rangeStart = shiftDate(today, -89);
   try {
     const ownerId = req.user?.id;
-    if (ownerId === undefined) return;
-    const selectedDate = parsed.data.date === undefined ? todayWibDate() : dateOnlyToUTC(parsed.data.date);
+    if (ownerId === undefined) {
+      sendApiError(res, 401, "UNAUTHORIZED", "Autentikasi diperlukan.");
+      return;
+    }
     const habits = await prisma.habit.findMany({
       where: { ownerId },
       orderBy: { createdAt: "asc" },
-      include: { checkIns: { where: { date: selectedDate }, select: { status: true } } },
+      include: {
+        checkIns: {
+          where: {
+            OR: [
+              { date: { gte: dateOnlyToUTC(rangeStart), lte: dateOnlyToUTC(today) } },
+              { date: dateOnlyToUTC(selectedDate) },
+            ],
+          },
+          select: { date: true, status: true },
+        },
+      },
     });
     res.status(200).json({
-      habits: habits.map(({ checkIns, ...habit }) => ({
-        ...habit,
-        todayCheckIn: checkIns[0] ?? null,
-        checkedInToday: checkIns.some((checkIn) => checkIn.status === "DONE"),
-      })),
+      habits: habits.map(({ checkIns, ...habit }) => {
+        const selectedCheckIn = checkIns.find((checkIn) => dateKey(checkIn.date) === selectedDate);
+        const recentDoneDates = checkIns
+          .filter(
+            (checkIn) =>
+              checkIn.status === "DONE" &&
+              dateKey(checkIn.date) >= rangeStart &&
+              dateKey(checkIn.date) <= today,
+          )
+          .map((checkIn) => checkIn.date);
+        return {
+          ...habit,
+          checkIn: selectedCheckIn === undefined ? null : { status: selectedCheckIn.status },
+          checkedIn: selectedCheckIn?.status === "DONE",
+          streak: calcDailyStreak(recentDoneDates, dateOnlyToUTC(today)),
+        };
+      }),
     });
-  } catch {
-    res
-      .status(500)
-      .json({ error: { code: "INTERNAL_SERVER_ERROR", message: "Terjadi kesalahan internal." } });
+  } catch (error: unknown) {
+    handleApiError(req, res, error);
   }
 }
 
 export async function getHabit(req: Request, res: Response): Promise<void> {
+  const { id } = validatedParams<IdParams>(res);
   try {
     const ownerId = req.user?.id;
-    const id = habitIdFrom(req);
-    if (ownerId === undefined || id === null) return notFound(res);
-    const habit = await prisma.habit.findFirst({ where: { id, ownerId } });
+    if (ownerId === undefined) return notFound(res);
+    const today = todayWIB();
+    const rangeStart = shiftDate(today, -89);
+    const habit = await prisma.habit.findFirst({
+      where: { id, ownerId },
+      include: {
+        checkIns: {
+          where: {
+            date: { gte: dateOnlyToUTC(rangeStart), lte: dateOnlyToUTC(today) },
+            status: "DONE",
+          },
+          select: { date: true },
+          orderBy: { date: "asc" },
+        },
+      },
+    });
     if (habit === null) return notFound(res);
-    res.status(200).json({ habit });
-  } catch {
-    res
-      .status(500)
-      .json({ error: { code: "INTERNAL_SERVER_ERROR", message: "Terjadi kesalahan internal." } });
+    const { checkIns, ...habitData } = habit;
+    res.status(200).json({
+      habit: {
+        ...habitData,
+        streak: calcDailyStreak(
+          checkIns.map(({ date }) => date),
+          dateOnlyToUTC(today),
+        ),
+      },
+    });
+  } catch (error: unknown) {
+    handleApiError(req, res, error);
   }
 }
 
 export async function createHabit(req: Request, res: Response): Promise<void> {
-  const parsed = createHabitSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: {
-        code: "VALIDATION_ERROR",
-        message: "Input habit tidak valid.",
-        details: parsed.error.flatten(),
-      },
-    });
-    return;
-  }
+  const input = validatedBody<CreateHabitInput>(res);
   try {
     const ownerId = req.user?.id;
-    if (ownerId === undefined) return;
+    if (ownerId === undefined) {
+      sendApiError(res, 401, "UNAUTHORIZED", "Autentikasi diperlukan.");
+      return;
+    }
     const habit = await prisma.habit.create({
       data: {
         ownerId,
-        title: parsed.data.title,
-        type: parsed.data.type,
-        description: parsed.data.description ?? null,
+        title: input.title,
+        type: input.type,
+        description: input.description ?? null,
       },
     });
     res.status(201).json({ habit });
-  } catch {
-    res
-      .status(500)
-      .json({ error: { code: "INTERNAL_SERVER_ERROR", message: "Terjadi kesalahan internal." } });
+  } catch (error: unknown) {
+    handleApiError(req, res, error);
   }
 }
 
 export async function updateHabit(req: Request, res: Response): Promise<void> {
-  const parsed = updateHabitSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: {
-        code: "VALIDATION_ERROR",
-        message: "Input habit tidak valid.",
-        details: parsed.error.flatten(),
-      },
-    });
-    return;
-  }
+  const input = validatedBody<UpdateHabitInput>(res);
+  const { id } = validatedParams<IdParams>(res);
   try {
     const ownerId = req.user?.id;
-    const id = habitIdFrom(req);
-    if (ownerId === undefined || id === null) return notFound(res);
+    if (ownerId === undefined) return notFound(res);
     const data: { title?: string; description?: string | null } = {};
-    if (parsed.data.title !== undefined) data.title = parsed.data.title;
-    if (parsed.data.description !== undefined) data.description = parsed.data.description;
+    if (input.title !== undefined) data.title = input.title;
+    if (input.description !== undefined) data.description = input.description;
     const result = await prisma.habit.updateMany({ where: { id, ownerId }, data });
     if (result.count === 0) return notFound(res);
     const habit = await prisma.habit.findFirst({ where: { id, ownerId } });
     if (habit === null) return notFound(res);
     res.status(200).json({ habit });
-  } catch {
-    res
-      .status(500)
-      .json({ error: { code: "INTERNAL_SERVER_ERROR", message: "Terjadi kesalahan internal." } });
+  } catch (error: unknown) {
+    handleApiError(req, res, error);
   }
 }
 
 export async function deleteHabit(req: Request, res: Response): Promise<void> {
+  const { id } = validatedParams<IdParams>(res);
   try {
     const ownerId = req.user?.id;
-    const id = habitIdFrom(req);
-    if (ownerId === undefined || id === null) return notFound(res);
+    if (ownerId === undefined) return notFound(res);
     const result = await prisma.habit.deleteMany({ where: { id, ownerId } });
     if (result.count === 0) return notFound(res);
     res.status(204).end();
-  } catch {
-    res
-      .status(500)
-      .json({ error: { code: "INTERNAL_SERVER_ERROR", message: "Terjadi kesalahan internal." } });
+  } catch (error: unknown) {
+    handleApiError(req, res, error);
   }
 }

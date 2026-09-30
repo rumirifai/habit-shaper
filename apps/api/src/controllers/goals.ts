@@ -1,6 +1,9 @@
 import type { Request, Response } from "express";
+import { handleApiError, sendApiError } from "../lib/api-error.js";
 import { prisma } from "../lib/prisma.js";
-import { assignHabitSchema, createGoalSchema, updateGoalSchema } from "../schemas/goals.js";
+import { validatedBody, validatedParams } from "../middleware/validate-request.js";
+import type { AssignHabitInput, CreateGoalInput, UpdateGoalInput } from "../schemas/goals.js";
+import type { IdAndHabitIdParams, IdParams } from "../schemas/params.js";
 
 function error(
   res: Response,
@@ -9,16 +12,10 @@ function error(
   message: string,
   details?: unknown,
 ): void {
-  res
-    .status(status)
-    .json({ error: { code, message, ...(details === undefined ? {} : { details }) } });
+  sendApiError(res, status, code, message, details);
 }
 function notFound(res: Response): void {
   error(res, 404, "NOT_FOUND", "Goal atau habit tidak ditemukan.");
-}
-function param(req: Request, key: string): string | null {
-  const value = req.params[key];
-  return typeof value === "string" ? value : null;
 }
 function mondayUtc(date: Date): Date {
   const day = date.getUTCDay();
@@ -46,7 +43,9 @@ function goalProgress(
 ) {
   const habitCount = habitLinks.length;
   const perHabit = habitLinks.map(({ habit }) => {
-    const byDate = new Map(habit.checkIns.map((checkIn) => [checkIn.date.toISOString().slice(0, 10), checkIn.status]));
+    const byDate = new Map(
+      habit.checkIns.map((checkIn) => [checkIn.date.toISOString().slice(0, 10), checkIn.status]),
+    );
     let done = 0;
     let miss = 0;
     for (let day = 0; day < elapsedDays; day += 1) {
@@ -74,28 +73,29 @@ const goalInclude = {
 } as const;
 
 export async function createGoal(req: Request, res: Response): Promise<void> {
-  const parsed = createGoalSchema.safeParse(req.body);
-  if (!parsed.success)
-    return error(res, 400, "VALIDATION_ERROR", "Input goal tidak valid.", parsed.error.flatten());
+  const input = validatedBody<CreateGoalInput>(res);
   const ownerId = req.user?.id;
-  if (!ownerId) return;
+  if (!ownerId) {
+    sendApiError(res, 401, "UNAUTHORIZED", "Autentikasi diperlukan.");
+    return;
+  }
   try {
     const goal = await prisma.$transaction(async (tx) => {
       const found = await tx.habit.findMany({
-        where: { id: { in: parsed.data.habitIds }, ownerId },
+        where: { id: { in: input.habitIds }, ownerId },
         select: { id: true },
       });
-      if (found.length !== new Set(parsed.data.habitIds).size) return null;
+      if (found.length !== new Set(input.habitIds).size) return null;
       const created = await tx.goal.create({
         data: {
           ownerId,
-          title: parsed.data.title,
-          description: parsed.data.description ?? null,
-          deadline: parsed.data.deadline ? new Date(`${parsed.data.deadline}T00:00:00.000Z`) : null,
+          title: input.title,
+          description: input.description ?? null,
+          deadline: input.deadline ? new Date(`${input.deadline}T00:00:00.000Z`) : null,
         },
       });
       const inline = await Promise.all(
-        parsed.data.newHabits.map((habit) =>
+        input.newHabits.map((habit) =>
           tx.habit.create({
             data: {
               ownerId,
@@ -117,14 +117,17 @@ export async function createGoal(req: Request, res: Response): Promise<void> {
     });
     if (goal === null) return notFound(res);
     res.status(201).json({ goal });
-  } catch {
-    error(res, 500, "INTERNAL_SERVER_ERROR", "Terjadi kesalahan internal.");
+  } catch (caught: unknown) {
+    handleApiError(req, res, caught);
   }
 }
 
 export async function listGoals(req: Request, res: Response): Promise<void> {
   const ownerId = req.user?.id;
-  if (!ownerId) return;
+  if (!ownerId) {
+    sendApiError(res, 401, "UNAUTHORIZED", "Autentikasi diperlukan.");
+    return;
+  }
   try {
     const today = todayWibUtc();
     const monday = mondayUtc(today);
@@ -165,14 +168,14 @@ export async function listGoals(req: Request, res: Response): Promise<void> {
         };
       }),
     });
-  } catch {
-    error(res, 500, "INTERNAL_SERVER_ERROR", "Terjadi kesalahan internal.");
+  } catch (caught: unknown) {
+    handleApiError(req, res, caught);
   }
 }
 
 export async function getGoal(req: Request, res: Response): Promise<void> {
   const ownerId = req.user?.id;
-  const id = param(req, "id");
+  const { id } = validatedParams<IdParams>(res);
   if (!ownerId || !id) return notFound(res);
   try {
     const today = todayWibUtc();
@@ -209,60 +212,55 @@ export async function getGoal(req: Request, res: Response): Promise<void> {
       }),
     };
     res.status(200).json({ goal: responseGoal, habitCount: progress.habitCount, progress });
-  } catch {
-    error(res, 500, "INTERNAL_SERVER_ERROR", "Terjadi kesalahan internal.");
+  } catch (caught: unknown) {
+    handleApiError(req, res, caught);
   }
 }
 
 export async function updateGoal(req: Request, res: Response): Promise<void> {
-  const parsed = updateGoalSchema.safeParse(req.body);
-  if (!parsed.success)
-    return error(res, 400, "VALIDATION_ERROR", "Input goal tidak valid.", parsed.error.flatten());
+  const input = validatedBody<UpdateGoalInput>(res);
   const ownerId = req.user?.id;
-  const id = param(req, "id");
+  const { id } = validatedParams<IdParams>(res);
   if (!ownerId || !id) return notFound(res);
   try {
     const data: { title?: string; description?: string | null; deadline?: Date | null } = {};
-    if (parsed.data.title !== undefined) data.title = parsed.data.title;
-    if (parsed.data.description !== undefined) data.description = parsed.data.description;
-    if (parsed.data.deadline !== undefined)
-      data.deadline =
-        parsed.data.deadline === null ? null : new Date(`${parsed.data.deadline}T00:00:00.000Z`);
+    if (input.title !== undefined) data.title = input.title;
+    if (input.description !== undefined) data.description = input.description;
+    if (input.deadline !== undefined)
+      data.deadline = input.deadline === null ? null : new Date(`${input.deadline}T00:00:00.000Z`);
     const updated = await prisma.goal.updateMany({ where: { id, ownerId }, data });
     if (!updated.count) return notFound(res);
     const goal = await prisma.goal.findFirst({ where: { id, ownerId }, include: goalInclude });
     if (!goal) return notFound(res);
     res.status(200).json({ goal });
-  } catch {
-    error(res, 500, "INTERNAL_SERVER_ERROR", "Terjadi kesalahan internal.");
+  } catch (caught: unknown) {
+    handleApiError(req, res, caught);
   }
 }
 
 export async function deleteGoal(req: Request, res: Response): Promise<void> {
   const ownerId = req.user?.id;
-  const id = param(req, "id");
+  const { id } = validatedParams<IdParams>(res);
   if (!ownerId || !id) return notFound(res);
   try {
     const result = await prisma.goal.deleteMany({ where: { id, ownerId } });
     if (!result.count) return notFound(res);
     res.status(204).end();
-  } catch {
-    error(res, 500, "INTERNAL_SERVER_ERROR", "Terjadi kesalahan internal.");
+  } catch (caught: unknown) {
+    handleApiError(req, res, caught);
   }
 }
 
 export async function assignHabit(req: Request, res: Response): Promise<void> {
-  const parsed = assignHabitSchema.safeParse(req.body);
-  if (!parsed.success)
-    return error(res, 400, "VALIDATION_ERROR", "Input habit tidak valid.", parsed.error.flatten());
+  const input = validatedBody<AssignHabitInput>(res);
   const ownerId = req.user?.id;
-  const id = param(req, "id");
+  const { id } = validatedParams<IdParams>(res);
   if (!ownerId || !id) return notFound(res);
   try {
     const result = await prisma.$transaction(async (tx) => {
       const goal = await tx.goal.findFirst({ where: { id, ownerId }, select: { id: true } });
       const habit = await tx.habit.findFirst({
-        where: { id: parsed.data.habitId, ownerId },
+        where: { id: input.habitId, ownerId },
         select: { id: true },
       });
       if (!goal || !habit) return false;
@@ -275,16 +273,15 @@ export async function assignHabit(req: Request, res: Response): Promise<void> {
     });
     if (!result) return notFound(res);
     res.status(200).json({ message: "Habit terhubung ke goal." });
-  } catch {
-    error(res, 500, "INTERNAL_SERVER_ERROR", "Terjadi kesalahan internal.");
+  } catch (caught: unknown) {
+    handleApiError(req, res, caught);
   }
 }
 
 export async function unassignHabit(req: Request, res: Response): Promise<void> {
   const ownerId = req.user?.id;
-  const id = param(req, "id");
-  const habitId = param(req, "habitId");
-  if (!ownerId || !id || !habitId) return notFound(res);
+  const { id, habitId } = validatedParams<IdAndHabitIdParams>(res);
+  if (!ownerId) return notFound(res);
   try {
     const result = await prisma.$transaction(async (tx) => {
       const goal = await tx.goal.findFirst({ where: { id, ownerId }, select: { id: true } });
@@ -307,7 +304,7 @@ export async function unassignHabit(req: Request, res: Response): Promise<void> 
     if (result === "last")
       return error(res, 422, "UNPROCESSABLE_ENTITY", "Goal wajib punya minimal 1 habit.");
     res.status(204).end();
-  } catch {
-    error(res, 500, "INTERNAL_SERVER_ERROR", "Terjadi kesalahan internal.");
+  } catch (caught: unknown) {
+    handleApiError(req, res, caught);
   }
 }
