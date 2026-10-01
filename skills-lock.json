@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "vercel-react-best-practices": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/react-best-practices/SKILL.md",
+      "computedHash": "6b526d013e28073246a36f99b529bc43745d30832ecfa8217b359c34f260ca6b"
+    },
+    "web-accessibility-web-accessibility": {
+      "source": "agents-inc/skills",
+      "sourceType": "github",
+      "skillPath": "src/skills/web-accessibility-web-accessibility/SKILL.md",
+      "computedHash": "aebd6bf76ceec49b8f1b0b292515440186a9134d1b5bce79ba1fd8446eef2f76"
+    }
+  }
+}
