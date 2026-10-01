@@ -76,9 +76,12 @@ services:
       - "3000:3000"
     volumes:
       - ./apps/web:/app/apps/web
+      # Keep the container's Next.js dev output separate from host `next build`.
+      - web_next:/app/apps/web/.next
       - ./packages/shared/src:/app/packages/shared/src
       - ./tsconfig.json:/app/tsconfig.json:ro
       - /app/node_modules
 
 volumes:
   pgdata:
+  web_next:
