@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Habit Shaper",
-  description: "Habit Shaper — Phase 0 setup",
+  description: "Bangun kebiasaan baik, satu hari pada satu waktu.",
 };
 
 type RootLayoutProps = {
