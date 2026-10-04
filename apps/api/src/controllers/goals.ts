@@ -4,6 +4,8 @@ import { prisma } from "../lib/prisma.js";
 import { validatedBody, validatedParams } from "../middleware/validate-request.js";
 import type { AssignHabitInput, CreateGoalInput, UpdateGoalInput } from "../schemas/goals.js";
 import type { IdAndHabitIdParams, IdParams } from "../schemas/params.js";
+import { calculateGoalProgress } from "../services/goal-progress.js";
+import { dateOnlyToUTC, mondayOfWeekWIB, todayWIB } from "../utils/date.js";
 
 function error(
   res: Response,
@@ -16,55 +18,6 @@ function error(
 }
 function notFound(res: Response): void {
   error(res, 404, "NOT_FOUND", "Goal atau habit tidak ditemukan.");
-}
-function mondayUtc(date: Date): Date {
-  const day = date.getUTCDay();
-  const monday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  monday.setUTCDate(monday.getUTCDate() - (day === 0 ? 6 : day - 1));
-  return monday;
-}
-function todayWibUtc(): Date {
-  const date = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Jakarta",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-  return new Date(`${date}T00:00:00.000Z`);
-}
-function goalProgress(
-  goalId: string,
-  habitLinks: Array<{
-    habit: { id: string; checkIns: Array<{ date: Date; status: "DONE" | "MISS" }> };
-  }>,
-  elapsedDays: number,
-  monday: Date,
-  today: Date,
-) {
-  const habitCount = habitLinks.length;
-  const perHabit = habitLinks.map(({ habit }) => {
-    const byDate = new Map(
-      habit.checkIns.map((checkIn) => [checkIn.date.toISOString().slice(0, 10), checkIn.status]),
-    );
-    let done = 0;
-    let miss = 0;
-    for (let day = 0; day < elapsedDays; day += 1) {
-      const date = new Date(monday);
-      date.setUTCDate(date.getUTCDate() + day);
-      const key = date.toISOString().slice(0, 10);
-      const status = byDate.get(key);
-      if (status === "DONE") done += 1;
-      else if (status === "MISS" || date < today) miss += 1;
-    }
-    return { habitId: habit.id, done, miss };
-  });
-  const done = perHabit.reduce((sum, habit) => sum + habit.done, 0);
-  return {
-    goalId,
-    habitCount,
-    weeklyCompletionPct: Math.round((100 * done) / Math.max(1, habitCount * elapsedDays)),
-    perHabit,
-  };
 }
 const goalInclude = {
   habitLinks: {
@@ -129,9 +82,8 @@ export async function listGoals(req: Request, res: Response): Promise<void> {
     return;
   }
   try {
-    const today = todayWibUtc();
-    const monday = mondayUtc(today);
-    const elapsedDays = Math.floor((today.getTime() - monday.getTime()) / 86400000) + 1;
+    const today = todayWIB();
+    const monday = mondayOfWeekWIB(today);
     const goals = await prisma.goal.findMany({
       where: { ownerId },
       orderBy: { createdAt: "asc" },
@@ -143,8 +95,9 @@ export async function listGoals(req: Request, res: Response): Promise<void> {
                 id: true,
                 title: true,
                 type: true,
+                createdAt: true,
                 checkIns: {
-                  where: { date: { gte: monday, lte: today } },
+                  where: { date: { gte: dateOnlyToUTC(monday), lte: dateOnlyToUTC(today) } },
                   select: { date: true, status: true },
                 },
               },
@@ -156,11 +109,16 @@ export async function listGoals(req: Request, res: Response): Promise<void> {
     res.status(200).json({
       goals: goals.map((goal) => {
         const habitCount = goal.habitLinks.length;
-        const progress = goalProgress(goal.id, goal.habitLinks, elapsedDays, monday, today);
+        const progress = calculateGoalProgress(
+          goal.id,
+          goal.habitLinks.map(({ habit }) => habit),
+          monday,
+          today,
+        );
         return {
           ...goal,
           habitLinks: goal.habitLinks.map((link) => {
-            const { checkIns: _checkIns, ...habit } = link.habit;
+            const { checkIns: _checkIns, createdAt: _createdAt, ...habit } = link.habit;
             return { ...link, habit };
           }),
           habitCount,
@@ -178,9 +136,8 @@ export async function getGoal(req: Request, res: Response): Promise<void> {
   const { id } = validatedParams<IdParams>(res);
   if (!ownerId || !id) return notFound(res);
   try {
-    const today = todayWibUtc();
-    const monday = mondayUtc(today);
-    const elapsedDays = Math.floor((today.getTime() - monday.getTime()) / 86400000) + 1;
+    const today = todayWIB();
+    const monday = mondayOfWeekWIB(today);
     const goal = await prisma.goal.findFirst({
       where: { id, ownerId },
       include: {
@@ -192,8 +149,9 @@ export async function getGoal(req: Request, res: Response): Promise<void> {
                 title: true,
                 type: true,
                 description: true,
+                createdAt: true,
                 checkIns: {
-                  where: { date: { gte: monday, lte: today } },
+                  where: { date: { gte: dateOnlyToUTC(monday), lte: dateOnlyToUTC(today) } },
                   select: { date: true, status: true },
                 },
               },
@@ -203,11 +161,16 @@ export async function getGoal(req: Request, res: Response): Promise<void> {
       },
     });
     if (!goal) return notFound(res);
-    const progress = goalProgress(goal.id, goal.habitLinks, elapsedDays, monday, today);
+    const progress = calculateGoalProgress(
+      goal.id,
+      goal.habitLinks.map(({ habit }) => habit),
+      monday,
+      today,
+    );
     const responseGoal = {
       ...goal,
       habitLinks: goal.habitLinks.map((link) => {
-        const { checkIns: _checkIns, ...habit } = link.habit;
+        const { checkIns: _checkIns, createdAt: _createdAt, ...habit } = link.habit;
         return { ...link, habit };
       }),
     };
@@ -223,16 +186,79 @@ export async function updateGoal(req: Request, res: Response): Promise<void> {
   const { id } = validatedParams<IdParams>(res);
   if (!ownerId || !id) return notFound(res);
   try {
-    const data: { title?: string; description?: string | null; deadline?: Date | null } = {};
-    if (input.title !== undefined) data.title = input.title;
-    if (input.description !== undefined) data.description = input.description;
-    if (input.deadline !== undefined)
-      data.deadline = input.deadline === null ? null : new Date(`${input.deadline}T00:00:00.000Z`);
-    const updated = await prisma.goal.updateMany({ where: { id, ownerId }, data });
-    if (!updated.count) return notFound(res);
-    const goal = await prisma.goal.findFirst({ where: { id, ownerId }, include: goalInclude });
-    if (!goal) return notFound(res);
-    res.status(200).json({ goal });
+    const result = await prisma.$transaction(async (tx) => {
+      const current = await tx.goal.findFirst({
+        where: { id, ownerId },
+        include: { habitLinks: { select: { habitId: true } } },
+      });
+      if (!current) return { status: "missing" as const };
+
+      const requestedHabitIds = [...new Set([...input.addHabitIds, ...input.removeHabitIds])];
+      if (requestedHabitIds.length > 0) {
+        const ownedHabits = await tx.habit.findMany({
+          where: { id: { in: requestedHabitIds }, ownerId },
+          select: { id: true },
+        });
+        if (ownedHabits.length !== requestedHabitIds.length) return { status: "missing" as const };
+      }
+
+      const removed = new Set(input.removeHabitIds);
+      const remainingHabitIds = current.habitLinks
+        .map(({ habitId }) => habitId)
+        .filter((habitId) => !removed.has(habitId));
+      const nextHabitIds = new Set([...remainingHabitIds, ...input.addHabitIds]);
+      if (nextHabitIds.size + input.newHabits.length < 1) return { status: "last" as const };
+
+      const data: { title?: string; description?: string | null; deadline?: Date | null } = {};
+      if (input.title !== undefined) data.title = input.title;
+      if (input.description !== undefined) data.description = input.description;
+      if (input.deadline !== undefined)
+        data.deadline =
+          input.deadline === null ? null : new Date(`${input.deadline}T00:00:00.000Z`);
+      if (Object.keys(data).length > 0) await tx.goal.update({ where: { id }, data });
+
+      if (input.removeHabitIds.length > 0) {
+        await tx.goalHabit.deleteMany({
+          where: { goalId: id, habitId: { in: input.removeHabitIds } },
+        });
+      }
+
+      const createdHabits = await Promise.all(
+        input.newHabits.map((habit) =>
+          tx.habit.create({
+            data: {
+              ownerId,
+              title: habit.title,
+              type: habit.type,
+              description: habit.description ?? null,
+            },
+            select: { id: true },
+          }),
+        ),
+      );
+      const habitIdsToConnect = [
+        ...new Set([...input.addHabitIds, ...createdHabits.map(({ id: habitId }) => habitId)]),
+      ];
+      if (habitIdsToConnect.length > 0) {
+        await tx.goalHabit.createMany({
+          data: habitIdsToConnect.map((habitId) => ({ goalId: id, habitId })),
+          skipDuplicates: true,
+        });
+      }
+
+      const goal = await tx.goal.findFirst({ where: { id, ownerId }, include: goalInclude });
+      return goal
+        ? {
+            status: "ok" as const,
+            goal,
+            createdHabitIds: createdHabits.map(({ id: habitId }) => habitId),
+          }
+        : { status: "missing" as const };
+    });
+    if (result.status === "missing") return notFound(res);
+    if (result.status === "last")
+      return error(res, 422, "UNPROCESSABLE_ENTITY", "Goal wajib punya minimal 1 habit.");
+    res.status(200).json({ goal: result.goal, createdHabitIds: result.createdHabitIds });
   } catch (caught: unknown) {
     handleApiError(req, res, caught);
   }

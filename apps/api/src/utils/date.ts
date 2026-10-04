@@ -15,6 +15,23 @@ export function dateOnlyToUTC(date: string): Date {
   return new Date(`${date}T00:00:00.000Z`);
 }
 
+/** Returns the WIB calendar date for a timestamp. */
+export function toWIBDate(date: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: WIB_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+/** Adds calendar days to an ISO date without local-time or DST effects. */
+export function addDays(date: string, days: number): string {
+  const value = dateOnlyToUTC(date);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
 /** Returns the Monday (YYYY-MM-DD) of the ISO week containing a WIB calendar date. */
 export function mondayOfWeekWIB(refDate: string): string {
   const [year, month, day] = refDate.split("-").map(Number);

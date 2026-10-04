@@ -1,15 +1,9 @@
-import { mondayOfWeekWIB, todayWIB } from "../utils/date.js";
+import { addDays, dateOnlyToUTC, mondayOfWeekWIB, todayWIB } from "../utils/date.js";
 
 const ALLOWANCE = 3 as const;
 
 function dateKey(date: Date): string {
   return date.toISOString().slice(0, 10);
-}
-
-function shiftDate(date: string, days: number): string {
-  const value = new Date(`${date}T00:00:00.000Z`);
-  value.setUTCDate(value.getUTCDate() + days);
-  return value.toISOString().slice(0, 10);
 }
 
 export type WeeklyResult = {
@@ -31,22 +25,26 @@ export type DailyResult = {
 export function calcCurrentStreak(checkIns: Date[], today: Date): number {
   const doneDates = new Set(checkIns.map(dateKey));
   const todayKey = dateKey(today);
-  let cursor = doneDates.has(todayKey) ? todayKey : shiftDate(todayKey, -1);
+  let cursor = doneDates.has(todayKey) ? todayKey : addDays(todayKey, -1);
   let streak = 0;
   while (doneDates.has(cursor)) {
     streak += 1;
-    cursor = shiftDate(cursor, -1);
+    cursor = addDays(cursor, -1);
   }
   return streak;
 }
 
-export function calcLongestStreak(checkIns: Date[]): number {
-  const dates = [...new Set(checkIns.map(dateKey))].sort();
+export function calcLongestStreak(
+  checkIns: Date[],
+  today: Date = dateOnlyToUTC(todayWIB()),
+): number {
+  const todayKey = dateKey(today);
+  const dates = [...new Set(checkIns.map(dateKey))].filter((date) => date <= todayKey).sort();
   let longest = 0;
   let current = 0;
   let previous: string | undefined;
   for (const date of dates) {
-    current = previous !== undefined && shiftDate(previous, 1) === date ? current + 1 : 1;
+    current = previous !== undefined && addDays(previous, 1) === date ? current + 1 : 1;
     longest = Math.max(longest, current);
     previous = date;
   }
@@ -57,8 +55,8 @@ export function calcDailyStreak(checkIns: Date[], today: Date): DailyResult {
   const dates = [...new Set(checkIns.map(dateKey))].sort();
   return {
     current: calcCurrentStreak(checkIns, today),
-    longest: calcLongestStreak(checkIns),
-    lastDoneDate: dates.at(-1) ?? null,
+    longest: calcLongestStreak(checkIns, today),
+    lastDoneDate: dates.filter((date) => date <= dateKey(today)).at(-1) ?? null,
   };
 }
 
@@ -70,7 +68,7 @@ export function calcWeekly(checkIns: Date[], weekStart: Date): WeeklyResult {
   let done = 0;
   let miss = 0;
   for (let index = 0; index < 7; index += 1) {
-    const date = shiftDate(monday, index);
+    const date = addDays(monday, index);
     if (date > today) {
       days.push({ date, status: "FUTURE" });
     } else if (doneDates.has(date)) {
@@ -85,7 +83,7 @@ export function calcWeekly(checkIns: Date[], weekStart: Date): WeeklyResult {
   }
   return {
     weekStart: monday,
-    weekEnd: shiftDate(monday, 6),
+    weekEnd: addDays(monday, 6),
     done,
     miss,
     allowance: ALLOWANCE,
