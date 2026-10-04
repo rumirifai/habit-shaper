@@ -11,7 +11,12 @@ import { createCheckIn, deleteCheckIn } from "../controllers/check-ins.js";
 import { getStreak } from "../controllers/streak.js";
 import { validateBody, validateParams, validateQuery } from "../middleware/validate-request.js";
 import { checkInSchema } from "../schemas/check-ins.js";
-import { createHabitSchema, listHabitsQuerySchema, updateHabitSchema } from "../schemas/habits.js";
+import {
+  createHabitSchema,
+  deleteHabitSchema,
+  listHabitsQuerySchema,
+  updateHabitSchema,
+} from "../schemas/habits.js";
 import { getStreakQuerySchema } from "../schemas/streak.js";
 import { idParamsSchema } from "../schemas/params.js";
 
@@ -31,7 +36,12 @@ router.patch(
   validateBody(updateHabitSchema, "Input habit tidak valid."),
   updateHabit,
 );
-router.delete("/:id", validateParams(idParamsSchema), deleteHabit);
+router.delete(
+  "/:id",
+  validateParams(idParamsSchema),
+  validateBody(deleteHabitSchema, "Input penghapusan habit tidak valid."),
+  deleteHabit,
+);
 router.post(
   "/:id/check-in",
   validateParams(idParamsSchema),

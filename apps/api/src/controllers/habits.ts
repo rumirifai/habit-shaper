@@ -2,10 +2,16 @@ import type { Request, Response } from "express";
 import { handleApiError, sendApiError } from "../lib/api-error.js";
 import { prisma } from "../lib/prisma.js";
 import { validatedBody, validatedParams, validatedQuery } from "../middleware/validate-request.js";
-import type { CreateHabitInput, ListHabitsQuery, UpdateHabitInput } from "../schemas/habits.js";
+import type {
+  CreateHabitInput,
+  DeleteHabitInput,
+  ListHabitsQuery,
+  UpdateHabitInput,
+} from "../schemas/habits.js";
 import type { IdParams } from "../schemas/params.js";
 import { dateOnlyToUTC, todayWIB } from "../utils/date.js";
 import { calcDailyStreak } from "../services/streak.js";
+import { deleteHabitAndReplaceGoals, HabitDisappearedError } from "../services/habits.js";
 
 function shiftDate(date: string, days: number): string {
   const value = dateOnlyToUTC(date);
@@ -149,14 +155,30 @@ export async function updateHabit(req: Request, res: Response): Promise<void> {
 }
 
 export async function deleteHabit(req: Request, res: Response): Promise<void> {
+  const input = validatedBody<DeleteHabitInput>(res);
   const { id } = validatedParams<IdParams>(res);
   try {
     const ownerId = req.user?.id;
     if (ownerId === undefined) return notFound(res);
-    const result = await prisma.habit.deleteMany({ where: { id, ownerId } });
-    if (result.count === 0) return notFound(res);
+    const result = await deleteHabitAndReplaceGoals(ownerId, id, input);
+
+    if (result === "missing") return notFound(res);
+    if (result === "replacements-required") {
+      sendApiError(
+        res,
+        422,
+        "REPLACEMENT_REQUIRED",
+        "Pilih satu habit pengganti untuk setiap goal yang hanya memiliki habit ini.",
+      );
+      return;
+    }
+    if (result === "invalid-replacement") {
+      sendApiError(res, 404, "NOT_FOUND", "Habit replacement tidak ditemukan.");
+      return;
+    }
     res.status(204).end();
   } catch (error: unknown) {
+    if (error instanceof HabitDisappearedError) return notFound(res);
     handleApiError(req, res, error);
   }
 }

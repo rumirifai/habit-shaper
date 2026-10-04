@@ -20,6 +20,42 @@ export const updateHabitSchema = z
     message: "Minimal satu field title atau description harus diisi.",
   });
 
+export const deleteHabitSchema = z
+  .object({
+    goalReplacements: z
+      .array(
+        z
+          .object({ goalId: z.string().uuid(), habitId: z.string().uuid() })
+          .strict(),
+      )
+      .default([]),
+    newHabit: createHabitSchema.optional(),
+    newHabitGoalIds: z.array(z.string().uuid()).default([]),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const goalIds = value.goalReplacements.map(({ goalId }) => goalId);
+    if (new Set(goalIds).size !== goalIds.length) {
+      ctx.addIssue({ code: "custom", message: "Goal replacement tidak boleh duplikat.", path: ["goalReplacements"] });
+    }
+    if (new Set(value.newHabitGoalIds).size !== value.newHabitGoalIds.length) {
+      ctx.addIssue({ code: "custom", message: "Goal habit baru tidak boleh duplikat.", path: ["newHabitGoalIds"] });
+    }
+    if (value.newHabitGoalIds.length > 0 && value.newHabit === undefined) {
+      ctx.addIssue({ code: "custom", message: "Data habit baru wajib diisi.", path: ["newHabit"] });
+    }
+    if (value.newHabitGoalIds.length === 0 && value.newHabit !== undefined) {
+      ctx.addIssue({ code: "custom", message: "Habit baru harus dipakai minimal satu goal.", path: ["newHabitGoalIds"] });
+    }
+    const replacementGoalIds = [
+      ...value.goalReplacements.map(({ goalId }) => goalId),
+      ...value.newHabitGoalIds,
+    ];
+    if (new Set(replacementGoalIds).size !== replacementGoalIds.length) {
+      ctx.addIssue({ code: "custom", message: "Setiap goal hanya boleh memiliki satu jenis replacement.", path: ["goalReplacements"] });
+    }
+  });
+
 const dateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -32,4 +68,5 @@ export const listHabitsQuerySchema = z.object({ date: dateSchema.optional() }).s
 
 export type CreateHabitInput = z.infer<typeof createHabitSchema>;
 export type UpdateHabitInput = z.infer<typeof updateHabitSchema>;
+export type DeleteHabitInput = z.infer<typeof deleteHabitSchema>;
 export type ListHabitsQuery = z.infer<typeof listHabitsQuerySchema>;
