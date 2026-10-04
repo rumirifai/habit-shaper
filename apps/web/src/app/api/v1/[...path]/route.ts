@@ -8,9 +8,14 @@ async function forwardRequest(request: NextRequest, context: RouteContext): Prom
   const path = context.params.path.join("/");
   const isAuthRoute = /^auth\/(register|login|refresh|logout)$/.test(path);
   const isHabitListRoute = path === "habits";
+  const isHabitResourceRoute = /^habits\/[^/]+$/.test(path);
   const isCheckInRoute = /^habits\/[^/]+\/check-in$/.test(path);
   const isStreakRoute = /^habits\/[^/]+\/streak$/.test(path);
-  if (!isAuthRoute && !isHabitListRoute && !isCheckInRoute && !isStreakRoute) {
+  const isGoalRoute =
+    path === "goals" ||
+    /^goals\/[^/]+$/.test(path) ||
+    /^goals\/[^/]+\/habits(?:\/[^/]+)?$/.test(path);
+  if (!isAuthRoute && !isHabitListRoute && !isHabitResourceRoute && !isCheckInRoute && !isStreakRoute && !isGoalRoute) {
     return NextResponse.json(
       { error: { code: "NOT_FOUND", message: "Route tidak ditemukan." } },
       { status: 404 },
@@ -30,7 +35,9 @@ async function forwardRequest(request: NextRequest, context: RouteContext): Prom
     const response = await fetch(`${baseUrl.replace(/\/$/, "")}/${path}${request.nextUrl.search}`, {
       method: request.method,
       headers,
-      ...(request.method === "POST" && contentType !== null ? { body: await request.text() } : {}),
+      ...((request.method === "POST" || request.method === "PATCH" || request.method === "DELETE") && contentType !== null
+        ? { body: await request.text() }
+        : {}),
       cache: "no-store",
     });
     const body = response.status === 204 ? null : await response.arrayBuffer();
@@ -49,4 +56,5 @@ async function forwardRequest(request: NextRequest, context: RouteContext): Prom
 
 export const GET = forwardRequest;
 export const POST = forwardRequest;
+export const PATCH = forwardRequest;
 export const DELETE = forwardRequest;

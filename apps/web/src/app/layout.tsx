@@ -5,6 +5,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Habit Shaper",
   description: "Bangun kebiasaan baik, satu hari pada satu waktu.",
+  applicationName: "Habit Shaper",
 };
 
 type RootLayoutProps = {

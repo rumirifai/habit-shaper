@@ -2,6 +2,10 @@
 
 import { useEffect, useState, type FormEvent, type JSX } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { setAuthSession, type AuthUser } from "./auth-session";
 
 type AuthResponse = {
@@ -42,6 +46,9 @@ export function AuthForm(): JSX.Element {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
+  const emailError = error.includes("email") || error.includes("Email");
+  const passwordError = error.includes("Password");
+  const generalError = error && !emailError && !passwordError ? error : "";
 
   useEffect(() => {
     let active = true;
@@ -118,87 +125,87 @@ export function AuthForm(): JSX.Element {
         </p>
       ) : (
         <>
-          <div className="auth-tabs" aria-label="Pilih autentikasi">
-            <button
-              type="button"
-              className={mode === "login" ? "tab active" : "tab"}
-              aria-pressed={mode === "login"}
-              onClick={() => {
-                setMode("login");
-                setError("");
-                setNotice("");
-              }}
-            >
+          <ToggleGroup
+            className="auth-tabs"
+            type="single"
+            variant="outline"
+            value={mode}
+            aria-label="Pilih autentikasi"
+            onValueChange={(value) => {
+              if (value !== "login" && value !== "register") return;
+              setMode(value);
+              setError("");
+              setNotice("");
+            }}
+          >
+            <ToggleGroupItem value="login" size="lg">
               Masuk
-            </button>
-            <button
-              type="button"
-              className={mode === "register" ? "tab active" : "tab"}
-              aria-pressed={mode === "register"}
-              onClick={() => {
-                setMode("register");
-                setError("");
-                setNotice("");
-              }}
-            >
+            </ToggleGroupItem>
+            <ToggleGroupItem value="register" size="lg">
               Daftar
-            </button>
-          </div>
+            </ToggleGroupItem>
+          </ToggleGroup>
           <form onSubmit={submit} noValidate>
-            {mode === "register" && (
-              <div className="field">
-                <label htmlFor="name">
-                  Nama <span className="optional">(opsional)</span>
-                </label>
-                <input
-                  id="name"
-                  name="name"
-                  autoComplete="name"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
+            <FieldGroup className="gap-4">
+              {mode === "register" && (
+                <Field>
+                  <FieldLabel htmlFor="name">
+                    Nama <span className="optional">(opsional)</span>
+                  </FieldLabel>
+                  <Input
+                    id="name"
+                    name="name"
+                    autoComplete="name"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                  />
+                </Field>
+              )}
+              <Field data-invalid={emailError || undefined}>
+                <FieldLabel htmlFor="email">Email</FieldLabel>
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  aria-invalid={emailError || undefined}
+                  aria-describedby={emailError ? "email-error" : undefined}
                 />
-              </div>
-            )}
-            <div className="field">
-              <label htmlFor="email">Email</label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                aria-invalid={error.includes("email") || error.includes("Email")}
-                aria-describedby={error ? "auth-error" : undefined}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="password">Password</label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
-                required
-                minLength={mode === "register" ? 8 : undefined}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                aria-invalid={error.includes("Password") || undefined}
-                aria-describedby={error ? "auth-error" : undefined}
-              />
-              {mode === "register" && <p className="field-hint">Minimal 8 karakter.</p>}
-            </div>
-            <button className="button" type="submit" disabled={busy}>
+                {emailError ? <FieldError id="email-error">{error}</FieldError> : null}
+              </Field>
+              <Field data-invalid={passwordError || undefined}>
+                <FieldLabel htmlFor="password">Password</FieldLabel>
+                <Input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete={mode === "login" ? "current-password" : "new-password"}
+                  required
+                  minLength={mode === "register" ? 8 : undefined}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  aria-invalid={passwordError || undefined}
+                  aria-describedby={passwordError ? "password-error" : undefined}
+                />
+                {mode === "register" ? (
+                  <FieldDescription>Minimal 8 karakter.</FieldDescription>
+                ) : null}
+                {passwordError ? <FieldError id="password-error">{error}</FieldError> : null}
+              </Field>
+            </FieldGroup>
+            <Button className="mt-4 w-full" size="lg" type="submit" disabled={busy}>
               {busy ? "Memproses…" : mode === "login" ? "Masuk" : "Buat akun"}
-            </button>
+            </Button>
           </form>
         </>
       )}
       <div className="form-message" aria-live="polite" aria-atomic="true">
-        {error && (
+        {generalError && (
           <p id="auth-error" className="error-message" role="alert">
-            {error}
+            {generalError}
           </p>
         )}
         {notice && (

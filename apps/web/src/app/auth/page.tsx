@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import { AuthForm } from "./auth-form";
+import BrandLogo from "@/components/brand-logo";
 
 export default function AuthPage(): JSX.Element {
   return (
@@ -8,7 +9,7 @@ export default function AuthPage(): JSX.Element {
         Lewati ke formulir
       </a>
       <section className="auth-card" aria-labelledby="page-title">
-        <p className="eyebrow">HABIT SHAPER</p>
+        <BrandLogo />
         <h1 id="page-title">Bangun hari yang lebih baik.</h1>
         <p className="auth-intro">Masuk atau buat akun untuk melanjutkan.</p>
         <AuthForm />
