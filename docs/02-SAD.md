@@ -104,6 +104,8 @@ habit-shaper/
 
 Dipilih **monorepo 1 repo** (ADR-01) agar perubahan kontrak API + UI atomik dan Compose sederhana.
 
+Keputusan penggunaan `packages/shared`: jangan menjadikannya dependency API/web sebelum ada kontrak stabil yang benar-benar dipakai kedua aplikasi. `API_CONVENTIONS.md` tetap menjadi standar backend; shared package hanya untuk DTO/schema lintas batas bila ada kebutuhan nyata. Source `packages/shared/src` sudah di-bind-mount oleh Compose dev, tetapi perubahan dependency/manifest memerlukan rebuild dan pembaruan volume anonim `node_modules` agar dependency image baru tidak tertutup volume lama.
+
 ## 6. ADR-lite (Keputusan Arsitektur)
 
 | ID     | Keputusan            | Alternatif ditolak            | Alasan                                                                                                                                    |
@@ -143,17 +145,17 @@ Catatan kontrak backend: validasi input dilakukan melalui Zod middleware pada bo
 
 ### Phase 3 — UI Next.js (2–3 hari)
 
-- [ ] Halaman auth, daftar habit hari ini + tombol check-in/undo, detail streak harian.
-- [ ] Weekly view Senin–Minggu + sisa toleransi 3.
-- [ ] CRUD goal + picker habit (existing + create-inline) + progres goal.
-- **HITL gate:** walkthrough 3 klik utama < 10 detik/check-in.
+- [x] Halaman auth, daftar habit hari ini + tombol check-in/undo, detail streak harian.
+- [x] Weekly view Senin–Minggu + sisa toleransi 3.
+- [x] CRUD goal + picker habit (existing + create-inline) + progres goal.
+- **HITL gate:** walkthrough 3 klik utama < 10 detik/check-in — selesai sesuai konfirmasi pengguna.
 
 ### Phase 4 — Logic Hardening (1–2 hari)
 
-- [ ] Implementasi algoritma SDD §4 (daily/weekly/goal progress) + normalisasi WIB.
-- [ ] Edge: double check-in, backfill larangan/membatasi, hapus goal/habit cascade, batas minggu.
-- [ ] Test: unit streak murni + integration API (supertest) + seed data.
-- **HITL gate:** semua edge SDD §5 lolos.
+- [x] Implementasi algoritma SDD §4 (daily/weekly/goal progress) + normalisasi WIB.
+- [x] Edge: double check-in, backfill larangan/membatasi, hapus goal/habit cascade, batas minggu.
+- [x] Test: unit streak murni + integration API (supertest) + seed data.
+- **HITL gate:** semua edge SDD §5 lolos pada unit/integration tests.
 
 ### Phase 5 — Prod-readiness (1 hari)
 

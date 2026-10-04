@@ -81,6 +81,7 @@ router.patch(
 - Controller bertanggung jawab pada HTTP dan orkestrasi; pindahkan kalkulasi murni atau aturan yang dipakai beberapa endpoint ke service.
 - Gunakan hasil Zod yang sudah divalidasi, bukan `req.body`, `req.query`, atau `req.params` mentah untuk input bisnis.
 - Gunakan transaksi Prisma untuk operasi multi-langkah yang harus atomik, misalnya membuat goal bersama habit inline dan relasinya.
+- Mutasi DELETE yang membutuhkan penggantian relasi sebelum cascade (mis. hapus habit terakhir pada goal) harus memvalidasi seluruh replacement dan menerapkan assign + delete dalam satu transaksi; jangan memecah operasi menjadi request FE berurutan.
 - Cegah N+1 query untuk response list. Pilih field/include yang diperlukan dan jaga filter owner pada query utama maupun query relasi.
 - Gunakan `deleteMany`/`updateMany` dengan filter owner bila perlu menggabungkan otorisasi dengan mutasi; periksa `count` untuk membedakan resource hilang dari operasi berhasil.
 - Tanggal bisnis dinormalisasi ke date-only WIB melalui helper yang ada (`todayWIB`, `dateOnlyToUTC`, dan helper tanggal terkait). Hindari membandingkan tanggal kebiasaan berdasarkan timezone browser atau `Date` lokal tanpa normalisasi.

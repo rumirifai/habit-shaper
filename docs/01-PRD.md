@@ -87,7 +87,7 @@ Backlog ini dicatat agar scope MVP tidak melebar.
 - **US-02:** Sebagai user, saya bisa membuat habit positif/negatif.
   - AC: field `title`, `type (POSITIVE|NEGATIVE)`, `description?`; validasi Zod; muncul di daftar hari ini.
 - **US-03:** Sebagai user, saya bisa edit/hapus habit.
-  - AC: hapus habit menghapus check-in miliknya (cascade), tapi tidak menghapus goal lain — hanya melepas relasinya.
+  - AC: hapus habit menghapus check-in miliknya (cascade), tapi tidak menghapus goal lain. Jika habit merupakan satu-satunya habit pada goal, user wajib memilih habit existing atau membuat habit pengganti sebelum konfirmasi hapus; penggantian relasi dan penghapusan terjadi atomik.
 - **US-04:** Sebagai user habit positif, saya bisa check-in “sudah dilakukan” hari ini.
   - AC: 1 check-in per habit per hari (idempotent); check-in ganda tidak menambah streak; bisa undo di hari yang sama.
 - **US-05:** Sebagai user habit negatif, saya bisa check-in “hari bersih” (tidak melakukan).

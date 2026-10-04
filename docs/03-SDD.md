@@ -176,16 +176,35 @@ Base: `http://localhost:4000/api/v1`. Auth: Bearer access JWT atau cookie refres
 
 ### 3.2 Habits
 
-| Method & Path                                                | Keterangan                                                                                                     |
-| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `GET /habits?date=yyyy-mm-dd`                                | List milik user + `checkIn`, `checkedIn` untuk tanggal pilihan (default WIB hari ini) + current streak ringkas |
-| `POST /habits`                                               | Buat habit                                                                                                     |
-| `GET /habits/:id`                                            | Detail + streak ringkas `{ current, longest, lastDoneDate }`                                                   |
-| `PATCH /habits/:id`                                          | Edit title/description                                                                                         |
-| `DELETE /habits/:id`                                         | Hapus (cascade check-in + lepas goal)                                                                          |
-| `POST /habits/:id/check-in`                                  | Check-in DONE untuk tanggal WIB (default hari ini). Idempotent                                                 |
-| `DELETE /habits/:id/check-in?date=yyyy-mm-dd`                | Undo (hanya tanggal yang diizinkan, default hari ini)                                                          |
-| `GET /habits/:id/streak?range=daily\|weekly&week=yyyy-mm-dd` | Streak harian + agregat mingguan                                                                               |
+| Method & Path                                                | Keterangan                                                                                                           |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `GET /habits?date=yyyy-mm-dd`                                | List milik user + `checkIn`, `checkedIn` untuk tanggal pilihan (default WIB hari ini) + current streak ringkas       |
+| `POST /habits`                                               | Buat habit                                                                                                           |
+| `GET /habits/:id`                                            | Detail + streak ringkas `{ current, longest, lastDoneDate }`                                                         |
+| `PATCH /habits/:id`                                          | Edit title/description                                                                                               |
+| `DELETE /habits/:id`                                         | Hapus secara atomik; body menyertakan pengganti untuk setiap goal yang akan kehilangan habit terakhir (lihat §3.2.1) |
+| `POST /habits/:id/check-in`                                  | Check-in DONE untuk tanggal WIB (default hari ini). Idempotent                                                       |
+| `DELETE /habits/:id/check-in?date=yyyy-mm-dd`                | Undo (hanya tanggal yang diizinkan, default hari ini)                                                                |
+| `GET /habits/:id/streak?range=daily\|weekly&week=yyyy-mm-dd` | Streak harian + agregat mingguan                                                                                     |
+
+#### 3.2.1 Penghapusan habit dan pengganti goal
+
+`DELETE /habits/:id` menerima JSON body (kirim `{ "goalReplacements": [], "newHabitGoalIds": [] }` bila tidak ada goal yang menjadi kosong). BE menghitung goal yang hanya memiliki habit yang dihapus. Setiap goal tersebut wajib dipasangkan dengan satu habit existing atau satu habit baru yang dibuat atomik:
+
+```json
+{
+  "goalReplacements": [{ "goalId": "<goal-uuid>", "habitId": "<existing-habit-uuid>" }],
+  "newHabitGoalIds": ["<goal-uuid>"],
+  "newHabit": { "title": "Jalan pagi", "type": "POSITIVE", "description": "Opsional" }
+}
+```
+
+- `goalReplacements` dan `newHabitGoalIds` secara gabungan harus tepat memuat setiap goal yang akan kehilangan habit terakhir, tanpa goal duplikat atau goal tambahan.
+- Habit existing harus milik user yang sama dan berbeda dari habit yang dihapus. Satu habit existing boleh dipakai pada beberapa goal.
+- `newHabit` opsional; bila dipakai, `newHabitGoalIds` harus berisi setidaknya satu goal. Satu habit baru dapat menggantikan habit di beberapa goal.
+- Assign replacement dan penghapusan habit berjalan dalam satu transaksi serializable. Jika validasi atau mutasi gagal, tidak ada perubahan parsial; check-in habit lama ikut terhapus oleh cascade saat sukses.
+- Sukses `204`. Tanpa replacement lengkap untuk goal yang menjadi kosong: `422 REPLACEMENT_REQUIRED`. Habit pengganti tidak ditemukan/tidak dimiliki user: `404 NOT_FOUND`. Input malformed/duplikat: `400 VALIDATION_ERROR`.
+- Goal yang masih memiliki habit lain tidak membutuhkan replacement; pengiriman replacement tambahan ditolak sebagai `422 REPLACEMENT_REQUIRED`.
 
 ### 3.3 Goals (many-to-many, min 1 habit)
 
@@ -194,10 +213,32 @@ Base: `http://localhost:4000/api/v1`. Auth: Bearer access JWT atau cookie refres
 | `GET /goals`                        | List + hitung habit terhubung + progres                                                                      |
 | `POST /goals`                       | Buat goal **wajib** `habitIds: string[]` min 1. Mendukung `newHabits: { title, type }[]` untuk create-inline |
 | `GET /goals/:id`                    | Detail + habits + progres                                                                                    |
-| `PATCH /goals/:id`                  | Edit field goal (tidak mengubah streak)                                                                      |
+| `PATCH /goals/:id`                  | Edit field goal dan perubahan relasi habit secara atomik (tidak mengubah streak)                             |
 | `DELETE /goals/:id`                 | Hapus goal saja (streak utuh)                                                                                |
 | `POST /goals/:id/habits`            | Assign habit existing `{ habitId }` (cek owner sama)                                                         |
 | `DELETE /goals/:id/habits/:habitId` | Unassign; ditolak jika akan membuat goal 0 habit (kecuali goal juga dihapus)                                 |
+
+#### 3.3.1 Edit goal dan relasi habit
+
+`PATCH /goals/:id` menerima perubahan field goal dan perubahan relasi habit dalam satu request:
+
+```json
+{
+  "title": "Goal baru",
+  "description": "Opsional",
+  "deadline": "2026-12-31",
+  "addHabitIds": ["<existing-habit-uuid>"],
+  "removeHabitIds": ["<linked-habit-uuid>"],
+  "newHabits": [{ "title": "Jalan pagi", "type": "POSITIVE", "description": "Opsional" }]
+}
+```
+
+- Semua field bersifat opsional; minimal satu perubahan harus dikirim. `description` dan `deadline` menerima `null` untuk menghapus nilai.
+- Habit existing yang ditambah harus dimiliki user yang sama. ID duplikat dalam daftar, atau ID yang muncul pada `addHabitIds` dan `removeHabitIds` sekaligus, ditolak sebagai `400 VALIDATION_ERROR`.
+- Goal harus tetap memiliki minimal satu habit setelah penghapusan, penambahan, dan pembuatan habit baru dihitung; pelanggaran ditolak sebagai `422`.
+- Perubahan field goal, penghapusan relasi, pembuatan habit inline, dan penambahan relasi dijalankan dalam satu transaksi. Jika salah satu langkah gagal, seluruh perubahan dibatalkan.
+- Sukses mengembalikan `200 { goal, createdHabitIds }`. `createdHabitIds` berisi ID habit inline yang dibuat oleh request (array kosong bila tidak ada).
+- Endpoint `POST /goals/:id/habits` tetap tersedia untuk assign satu habit existing secara langsung dan idempotent; endpoint `DELETE /goals/:id/habits/:habitId` tetap tersedia untuk melepas relasi satu per satu.
 
 ### 3.4 Kontrak TypeScript + Zod (contoh)
 
@@ -414,18 +455,22 @@ Interpretasi: `remaining` = jatah gagal tersisa minggu itu. Jika `miss > 3`, min
 
 ### 4.4 Progres Goal (agregat streak habit)
 
-MVP sederhana dan jujur:
+MVP sederhana dan jujur. Setiap habit mulai dihitung pada tanggal kalender WIB saat habit dibuat (inklusif); tanggal sebelum habit dibuat tidak menghasilkan miss dan tidak masuk denominator progres.
 
 ```text
-untuk setiap habit dalam goal, hitung weekly (done, miss) minggu berjalan WIB
-weeklyCompletionPct = round(100 * sum(done) / max(1, habitCount * elapsedDays))
-elapsedDays = jumlah hari Senin..min(hari ini, Minggu)
+untuk setiap habit dalam goal, hitung weekly (done, miss) mulai max(Senin minggu ini, tanggal dibuat WIB) sampai min(hari ini, Minggu)
+activeDays(habit) = jumlah tanggal pada rentang tersebut, termasuk tanggal dibuat dan hari ini
+weeklyCompletionPct = round(100 * sum(done) / max(1, sum(activeDays(habit))))
+miss = hari aktif sebelum hari ini tanpa DONE, atau status MISS eksplisit
 ```
 
 - Goal tanpa habit tidak mungkin (dicegah saat create).
 - `habitIds` duplikat ditolak sebagai input tidak valid.
 - Unassign terakhir ditolak; hapus goal tidak menyentuh riwayat.
 - Campuran build/break sah: keduanya memakai DONE yang sama.
+- Hari sebelum tanggal pembuatan habit (dikonversi ke kalender `Asia/Jakarta`) tidak masuk hitungan `miss` maupun denominator. Tanggal pembuatan dihitung inklusif.
+- Jika habit dibuat setelah minggu berjalan dimulai, denominator dan miss habit itu dimulai pada tanggal pembuatannya. Persentase goal menggunakan total hari aktif seluruh habit, bukan `habitCount × elapsedDays`.
+- Hari ini yang belum DONE tetap masuk denominator persentase, tetapi belum dihitung sebagai miss; hari ini masih dapat di-check-in.
 
 ### 4.5 Alur check-in (sequence)
 
@@ -496,6 +541,6 @@ stateDiagram-v2
 
 ## 8. Uji (Definisi Selesai Teknis)
 
-- Unit (murni, tanpa DB): `calcCurrentStreak`, `calcLongestStreak`, `calcWeekly`, `mondayOfWeekWib` — termasuk kasus putus 1 hari, toleransi 3, batas Senin/Minggu, undo.
+- Unit (murni, tanpa DB): helper tanggal WIB, `calcCurrentStreak`, `calcLongestStreak`, `calcWeekly`, progres goal (tanggal habit dibuat inklusif), serta mapping error Prisma — termasuk kasus putus 1 hari, toleransi 3, batas Senin/Minggu, future, dan undo. Unit dijalankan dengan `vitest.unit.config.ts` tanpa setup koneksi DB.
 - Integration (supertest + DB test): register/login isolasi, create goal tanpa habit → 422, create-inline habit, double check-in idempotent, hapus goal streak utuh, weekly remaining, malformed route UUID → 400.
 - Manual: `docker compose up --build`, skenario Andini (build) + Bagas (break) 7 hari simulasi.

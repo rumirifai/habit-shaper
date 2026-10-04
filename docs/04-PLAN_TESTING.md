@@ -89,7 +89,12 @@ Tujuan: kontrak SDD §3.2–§3.4 + aturan bisnis PRD FR-02/FR-03/FR-06/FR-07.
 - [x] `HAB-I-06` `GET /habits/:id` milik user lain -> 404.
 - [x] `HAB-I-07` `PATCH /habits/:id` ubah title/description -> 200; schema menolak field `type` sebagai input tambahan.
 - [x] `HAB-I-08` `PATCH /habits/:id` milik orang lain -> 404.
-- [x] `HAB-I-09` `DELETE /habits/:id` -> 204 + check-in ikut terhapus + join `GoalHabit` ikut terhapus, goal lain tetap ada.
+- [x] `HAB-I-09` `DELETE /habits/:id` body replacement kosong tanpa goal terkait -> 204 + check-in ikut terhapus.
+- [x] `HAB-I-11` Delete habit terakhir pada goal tanpa replacement -> 422 `REPLACEMENT_REQUIRED`; habit dan relasi tetap ada.
+- [x] `HAB-I-12` Delete habit terakhir pada beberapa goal dengan pengganti existing -> 204; semua goals tetap berisi habit dan habit lama/check-in hilang.
+- [x] `HAB-I-13` Delete habit dengan replacement milik user lain -> 404; tidak ada mutasi parsial.
+- [x] `HAB-I-14` Replacement habit baru dibuat inline dalam transaksi dan dapat dipasang ke lebih dari satu goal.
+- [x] `HAB-I-15` Replacement invalid/duplikat atau goal tambahan -> error sesuai kontrak; tidak ada mutasi parsial.
 
 #### 2.3 Integration — Check-in dan Undo
 
@@ -102,6 +107,7 @@ Tujuan: kontrak SDD §3.2–§3.4 + aturan bisnis PRD FR-02/FR-03/FR-06/FR-07.
 - [x] `CHK-I-07` `DELETE /habits/:id/check-in?date=hari-ini` (undo) -> 204 + streak turun saat dihitung ulang.
 - [x] `CHK-I-08` Undo tanggal lampau atau masa depan -> 422 (`BACKFILL_NOT_ALLOWED` atau `FUTURE_DATE`).
 - [x] `CHK-I-09` Undo check-in yang tidak ada -> 204 idempotent tanpa body.
+- [x] `CHK-I-10` Dua check-in konkuren untuk habit/tanggal sama -> kedua request sukses, response sama, hanya satu baris tersimpan.
 
 #### 2.4 Integration — Goals dan relasi many-to-many
 
@@ -120,6 +126,8 @@ Tujuan: kontrak SDD §3.2–§3.4 + aturan bisnis PRD FR-02/FR-03/FR-06/FR-07.
 - [x] `GOAL-I-12` `DELETE /goals/:id/habits/:habitId` unassign satu dari banyak -> 204 tanpa body.
 - [x] `GOAL-I-13` Unassign habit terakhir dalam goal -> 422 (goal tidak boleh 0 habit).
 - [x] `GOAL-I-14` Error goal selalu envelope `{ error: { code, message, details? } }` untuk 400/401/404/422.
+- [x] `GOAL-I-16` Alur inline edit goal `POST /habits` → `POST /goals/:id/habits` -> habit muncul di `GET /habits` dan relasi muncul di `GET /goals`.
+- [x] `GOAL-I-17` Habit yang dibuat hari ini memulai denominator/miss progres dari tanggal pembuatan WIB secara inklusif.
 
 #### 2.5 Integration — Streak endpoints
 
@@ -133,19 +141,27 @@ Tujuan: kontrak SDD §3.2–§3.4 + aturan bisnis PRD FR-02/FR-03/FR-06/FR-07.
 
 Tujuan: alur PRD US-02–US-11 dalam ≤3 klik, label POSITIVE vs NEGATIVE benar.
 
-- [ ] `UI-01` Form register/login menampilkan error validasi (email invalid, password pendek) tanpa submit ke API.
-- [ ] `UI-02` Daftar habit hari ini render dari API + status DONE/PENDING per habit.
-- [ ] `UI-03` Tombol check-in habit POSITIVE berlabel "Selesai" dan memanggil `POST check-in`; optimistik/tunggu response lalu refresh badge.
-- [ ] `UI-04` Tombol check-in habit NEGATIVE berlabel "Hari bersih" (bukan "Selesai").
-- [ ] `UI-05` Tombol undo hanya untuk hari ini; setelah undo badge kembali PENDING.
-- [ ] `UI-06` Detail streak harian menampilkan `current`, `longest`, `lastDoneDate`.
-- [ ] `UI-07` Weekly view Senin–Minggu menampilkan `done X/7`, `miss Y`, `sisa toleransi max(0, 3-Y)` + highlight minggu berjalan.
-- [ ] `UI-08` Navigasi minggu mundur memanggil API dengan `week` yang dinormalisasi ke Senin.
-- [ ] `UI-09` Form goal menolak submit tanpa habit (pesan "minimal 1 habit") sebelum request.
-- [ ] `UI-10` Goal picker bisa pilih habit existing + buat habit baru inline dalam satu submit.
-- [ ] `UI-11` Daftar goal menampilkan progres (`weeklyCompletionPct`, per-habit done/miss).
-- [ ] `UI-12` Hapus goal menampilkan konfirmasi dan copy "streak habit tidak ikut terhapus".
-- [ ] `UI-13` State error API (401/404/422) dirender sebagai pesan ramah, bukan crash.
+- [x] `UI-01` Form register/login menampilkan error validasi (email invalid, password pendek) tanpa submit ke API.
+- [x] `UI-02` Daftar habit hari ini render dari API + status DONE/PENDING per habit.
+- [x] `UI-03` Tombol check-in habit POSITIVE berlabel "Selesai" dan memanggil `POST check-in`; optimistik/tunggu response lalu refresh badge.
+- [x] `UI-04` Tombol check-in habit NEGATIVE berlabel "Hari bersih" (bukan "Selesai").
+- [x] `UI-05` Tombol undo hanya untuk hari ini; setelah undo badge kembali PENDING.
+- [x] `UI-06` Detail streak harian menampilkan `current`, `longest`, `lastDoneDate`.
+- [x] `UI-07` Weekly view Senin–Minggu menampilkan `done X/7`, `miss Y`, `sisa toleransi max(0, 3-Y)` + highlight minggu berjalan.
+- [x] `UI-08` Navigasi minggu mundur memanggil API dengan `week` yang dinormalisasi ke Senin.
+- [x] `UI-09` Form goal menolak submit tanpa habit (pesan "minimal 1 habit") sebelum request.
+- [x] `UI-10` Goal picker bisa pilih habit existing + buat habit baru inline dalam satu submit.
+- [x] `UI-11` Daftar goal menampilkan progres (`weeklyCompletionPct`, per-habit done/miss).
+- [x] `UI-12` Hapus goal menampilkan konfirmasi dan copy "streak habit tidak ikut terhapus".
+- [x] `UI-13` State error API (401/404/422) dirender sebagai pesan ramah, bukan crash.
+- [x] `UI-14` Weekly view tidak meminta data saat initial render; disclosure habit memicu maksimal satu fetch awal dan menyimpan hasil untuk buka ulang.
+- [x] `UI-15` Filter jenis dan pencarian judul menyaring daftar lokal tanpa request tambahan.
+- [x] `UI-16` Mobile nav membuka/menutup menu Habit/Goals/Keluar dengan tombol keyboard-accessible.
+- [x] `UI-17` Dialog delete meminta replacement per goal terdampak, mendukung habit existing/inline, dan tidak mengirim request jika belum lengkap.
+- [x] `UI-18` Form create habit mengirim jenis/field valid dan menampilkan hasil/error.
+- [x] `UI-19` Editor goal menampilkan habit yang terhubung dan menyimpan assignment habit existing secara atomik melalui `PATCH /goals/:id`.
+- [x] `UI-20` Editor goal dapat unassign salah satu dari beberapa habit; unassign terakhir disabled dengan penjelasan aturan minimal satu habit.
+- [x] `UI-21` Editor goal dapat memilih “Buat habit baru…”, mengisi jenis dan nama, lalu membuat serta menghubungkan habit secara atomik; jika penyimpanan gagal, tidak ada habit atau relasi parsial, dan retry yang berhasil hanya membuat satu habit yang terhubung.
 
 ### Phase 4 — Logic Hardening: unit murni + edge (`apps/api` dan `apps/web` logika)
 
@@ -153,62 +169,67 @@ Tujuan: algoritma SDD §4 dan state machine SDD §5. Semua unit tanpa DB.
 
 #### 2.6 Unit — util tanggal WIB (SDD §4.1)
 
-- [ ] `DATE-U-01` `todayWib()` format `yyyy-mm-dd` dan memakai zona `Asia/Jakarta` (mock `Date` di batas tengah malam UTC vs WIB).
-- [ ] `DATE-U-02` `mondayOfWeekWib()` untuk Senin -> dirinya sendiri.
-- [ ] `DATE-U-03` `mondayOfWeekWib()` untuk Minggu -> Senin 6 hari sebelumnya.
-- [ ] `DATE-U-04` `mondayOfWeekWib()` untuk Rabu -> Senin minggu sama.
-- [ ] `DATE-U-05` `mondayOfWeekWib()` melewati batas bulan/tahun (mis. 2026-09-28 Senin vs 2026-10-04 Minggu; 2025-12-29 Senin vs 2026-01-04 Minggu).
-- [ ] `DATE-U-06` `prevDate`/`addDays` benar di batas bulan dan tahun kabisat.
-- [ ] `DATE-U-07` Input tanggal invalid ditolak Zod (`z.string().date()`), bukan dilempar sebagai `Invalid Date` diam-diam.
+- [x] `DATE-U-01` `todayWIB()` format `yyyy-mm-dd` dan memakai zona `Asia/Jakarta` (mock `Date` di batas tengah malam UTC vs WIB).
+- [x] `DATE-U-02` `mondayOfWeekWIB()` untuk Senin -> dirinya sendiri.
+- [x] `DATE-U-03` `mondayOfWeekWIB()` untuk Minggu -> Senin 6 hari sebelumnya.
+- [x] `DATE-U-04` `mondayOfWeekWIB()` untuk Rabu -> Senin minggu sama.
+- [x] `DATE-U-05` `mondayOfWeekWIB()` melewati batas bulan/tahun (mis. 2026-09-28 Senin vs 2026-10-04 Minggu; 2025-12-29 Senin vs 2026-01-04 Minggu).
+- [x] `DATE-U-06` `addDays` benar di batas bulan dan tahun kabisat.
+- [x] `DATE-U-07` Input tanggal invalid ditolak Zod (`z.string().date()`), bukan dilempar sebagai `Invalid Date` diam-diam.
 
 #### 2.7 Unit — daily streak (SDD §4.2)
 
-- [ ] `DAILY-U-01` 5 DONE berturut-turut -> `current = 5`.
-- [ ] `DAILY-U-02` Pola DONE, DONE, kosong, DONE (hari ini) -> `current = 1` (1 hari kosong memutus).
-- [ ] `DAILY-U-03` Hari ini belum DONE tapi kemarin DONE beruntun -> `current` dihitung dari kemarin (hari ini PENDING, belum memutus).
-- [ ] `DAILY-U-04` `MISS` eksplisit == hari kosong untuk pemutus streak.
-- [ ] `DAILY-U-05` Habit NEGATIVE memakai mesin sama: DONE = lanjut, kosong/MISS = putus.
-- [ ] `DAILY-U-06` Undo hari ini (hapus DONE) menurunkan `current` saat dihitung ulang.
-- [ ] `DAILY-U-07` Tidak ada toleransi di level harian: 1 miss kemarin membuat `current` mulai dari 0/1, bukan dilanjutkan.
+- [x] `DAILY-U-01` 5 DONE berturut-turut -> `current = 5`.
+- [x] `DAILY-U-02` Pola DONE, DONE, kosong, DONE (hari ini) -> `current = 1` (1 hari kosong memutus).
+- [x] `DAILY-U-03` Hari ini belum DONE tapi kemarin DONE beruntun -> `current` dihitung dari kemarin (hari ini PENDING, belum memutus).
+- [x] `DAILY-U-04` `MISS` eksplisit == hari kosong untuk pemutus streak.
+- [x] `DAILY-U-05` Habit NEGATIVE memakai mesin sama: DONE = lanjut, kosong/MISS = putus.
+- [x] `DAILY-U-06` Undo hari ini (hapus DONE) menurunkan `current` saat dihitung ulang.
+- [x] `DAILY-U-07` Tidak ada toleransi di level harian: 1 miss kemarin membuat `current` mulai dari 0/1, bukan dilanjutkan.
 
 #### 2.8 Unit — longest streak
 
-- [ ] `LONG-U-01` Data campuran (mis. run 3, putus, run 5) -> `longest = 5`.
-- [ ] `LONG-U-02` Semua DONE -> `longest = jumlah hari`.
-- [ ] `LONG-U-03` Baris FUTURE tidak ikut memutus/menambah `longest`.
-- [ ] `LONG-U-04` Riwayat kosong -> `longest = 0`, `lastDoneDate = null`.
+- [x] `LONG-U-01` Data campuran (mis. run 3, putus, run 5) -> `longest = 5`.
+- [x] `LONG-U-02` Semua DONE -> `longest = jumlah hari`.
+- [x] `LONG-U-03` Baris FUTURE tidak ikut memutus/menambah `longest`.
+- [x] `LONG-U-04` Riwayat kosong -> `longest = 0`, `lastDoneDate = null`.
 
 #### 2.9 Unit — weekly + allowance 3 (SDD §4.3)
 
-- [ ] `WEEK-U-01` Minggu penuh 7 DONE -> `done 7, miss 0, remaining 3`.
-- [ ] `WEEK-U-02` `done 4, miss 3` -> `remaining 0` (batas pas).
-- [ ] `WEEK-U-03` `miss 5` -> `remaining 0` (clamp, bukan negatif).
-- [ ] `WEEK-U-04` Hari ini PENDING (kosong) berstatus `PENDING`, bukan `MISS`; hari lalu yang kosong berstatus `MISS`.
-- [ ] `WEEK-U-05` Tanggal > today berstatus `FUTURE` dan tidak dihitung `done/miss`.
-- [ ] `WEEK-U-06` `weekStart` selalu Senin, `weekEnd = weekStart + 6` (Minggu).
-- [ ] `WEEK-U-07` `MISS` eksplisit dan kosong masa lalu sama-sama `miss + 1`.
-- [ ] `WEEK-U-08` Elapsed days: `weeklyCompletionPct = round(100 * sum(done) / max(1, habitCount * elapsedDays))`.
+- [x] `WEEK-U-01` Minggu penuh 7 DONE -> `done 7, miss 0, remaining 3`.
+- [x] `WEEK-U-02` `done 4, miss 3` -> `remaining 0` (batas pas).
+- [x] `WEEK-U-03` `miss 5` -> `remaining 0` (clamp, bukan negatif).
+- [x] `WEEK-U-04` Hari ini PENDING (kosong) berstatus `PENDING`, bukan `MISS`; hari lalu yang kosong berstatus `MISS`.
+- [x] `WEEK-U-05` Tanggal > today berstatus `FUTURE` dan tidak dihitung `done/miss`.
+- [x] `WEEK-U-06` `weekStart` selalu Senin, `weekEnd = weekStart + 6` (Minggu).
+- [x] `WEEK-U-07` `MISS` eksplisit dan kosong masa lalu sama-sama `miss + 1`.
 
 #### 2.10 Unit — progres goal (SDD §4.4)
 
-- [ ] `GOAL-U-01` 1 goal 2 habit: agregat `sum(done)` benar + `habitCount = 2`.
-- [ ] `GOAL-U-02` Campuran build+break dihitung dengan DONE yang sama.
-- [ ] `GOAL-U-03` Goal tanpa habit tidak mungkin lolos validasi (ditolak di level Zod, bukan dihitung 0%).
-- [ ] `GOAL-U-04` Pembagi memakai `max(1, habitCount * elapsedDays)` sehingga tidak division-by-zero.
+- [x] `GOAL-U-01` 1 goal 2 habit: agregat `sum(done)` benar + `habitCount = 2`.
+- [x] `GOAL-U-02` Campuran build+break dihitung dengan DONE yang sama.
+- [x] `GOAL-U-03` Goal tanpa habit tidak mungkin lolos validasi (ditolak di level Zod, bukan dihitung 0%).
+- [x] `GOAL-U-04` Pembagi memakai `max(1, total active days per habit)` sehingga tidak division-by-zero.
+- [x] `GOAL-U-05` Habit baru mulai dihitung pada tanggal dibuat dalam WIB secara inklusif; tanggal lebih awal tidak menjadi miss.
+- [x] `GOAL-U-06` Hari ini tanpa DONE masuk denominator persentase, tetapi belum menjadi miss; hari aktif lampau tanpa DONE dihitung miss.
+- [x] Progres goal memakai total hari aktif per habit, dari tanggal dibuat WIB inklusif sampai hari ini; tanggal sebelum pembuatan tidak masuk denominator.
+
+Eksekusi unit Phase 4: `npm exec --workspace @habit-shaper/api -- vitest run --config vitest.unit.config.ts` — **38 test lulus**.
+Eksekusi backend integration: `npm exec --workspace @habit-shaper/api -- vitest run` dengan `DATABASE_URL` test dan `TZ=Asia/Jakarta` — **102 test lulus**.
 
 #### 2.11 Edge case lintas lapisan (SDD §5)
 
-- [ ] `EDGE-01` Backfill kemarin ditolak 422 `BACKFILL_NOT_ALLOWED`; data tetap MISS.
-- [ ] `EDGE-02` Future date ditolak 422 `FUTURE_DATE`.
-- [ ] `EDGE-03` Otoritas tanggal: backend menentukan hari ini (WIB); kiriman `date` client yang beda zona tetap dinormalisasi/ditolak, bukan dipercaya mentah.
-- [ ] `EDGE-04` Double check-in konkuren tidak membuat duplikat (unique constraint; `P2002` diperlakukan sukses idempotent).
-- [ ] `EDGE-05` Hapus goal: habit + check-in utuh; hitung ulang streak sebelum/sesudah sama.
-- [ ] `EDGE-06` Hapus habit: check-in + join ikut hilang; goal lain tidak ikut terhapus.
-- [ ] `EDGE-07` Assign lintas user 404; tidak ada join yang terbentuk.
-- [ ] `EDGE-08` Hari kosong masa lalu = MISS implisit untuk daily dan weekly (konsisten di kedua fungsi).
-- [ ] `EDGE-09` Param `week` sembarang tanggal dinormalisasi ke Senin-nya; invalid -> 400.
-- [ ] `EDGE-10` Prisma `P2002` check-in -> 200 idempotent; `P2025` -> 404; `P2003` -> 404/422 (mapping diuji, bukan asumsi).
-- [ ] `EDGE-11` Tidak ada `any` di kode test maupun sumber: `tsc --noEmit` + ESLint `no-explicit-any` lolos.
+- [x] `EDGE-01` Backfill kemarin ditolak 422 `BACKFILL_NOT_ALLOWED`; data tetap MISS.
+- [x] `EDGE-02` Future date ditolak 422 `FUTURE_DATE`.
+- [x] `EDGE-03` Backend menentukan hari ini pada timezone WIB; date-only yang dikirim client tidak dapat mengganti otoritas tanggal server.
+- [x] `EDGE-04` Double check-in konkuren tidak membuat duplikat (unique constraint; hasil idempotent).
+- [x] `EDGE-05` Hapus goal: habit + check-in utuh; hitung ulang streak sebelum/sesudah sama.
+- [x] `EDGE-06` Hapus habit: check-in + join ikut hilang; goal lain tidak ikut terhapus atau harus mendapat replacement.
+- [x] `EDGE-07` Assign lintas user 404; tidak ada join yang terbentuk.
+- [x] `EDGE-08` Hari kosong masa lalu = MISS implisit untuk daily dan weekly (konsisten di kedua fungsi).
+- [x] `EDGE-09` Param `week` sembarang tanggal dinormalisasi ke Senin-nya; invalid -> 400.
+- [x] `EDGE-10` Prisma `P2002` check-in idempotent; `P2025` -> 404; `P2003` -> 422; mapping diuji.
+- [x] `EDGE-11` Tidak ada `any` di kode test maupun sumber: typecheck + ESLint lolos.
 
 ## 3. Command Windows (PowerShell)
 
@@ -221,27 +242,24 @@ Semua command dari root monorepo `D:\habit-shaper` kecuali disebut lain. Gunakan
 node --version; npm --version
 npm install
 
-# DB test via compose (service db saja, port 5432)
-docker compose up -d db
-
-# env test backend (contoh; sesuaikan nama file env proyek)
-$env:DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/habit_shaper_test?schema=public"
+# Database test PostgreSQL yang sudah disediakan/aktif
+$env:DATABASE_URL = "postgresql://habit:habit_dev_password@localhost:5432/habitshapertest?schema=public"
 $env:TZ = "Asia/Jakarta"
-npx --prefix apps/api prisma migrate deploy
+npm exec --workspace @habit-shaper/api -- prisma migrate deploy --schema prisma/schema.prisma
 ```
 
 ### 3.2 Backend: unit saja (cepat, tanpa DB)
 
 ```powershell
-# dari D:\habit-shaper\apps\api
-npx vitest run src/lib/__tests__/dates.unit.test.ts src/lib/__tests__/streak.unit.test.ts src/lib/__tests__/goal-progress.unit.test.ts
+# dari D:\habit-shaper (unit tidak memakai database)
+npm exec --workspace @habit-shaper/api -- vitest run --config vitest.unit.config.ts
 ```
 
 ### 3.3 Backend: integration per file (butuh DB test menyala)
 
 ```powershell
 # dari D:\habit-shaper\apps\api
-$env:DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/habit_shaper_test?schema=public"
+$env:DATABASE_URL = "postgresql://habit:habit_dev_password@localhost:5432/habitshapertest?schema=public"
 $env:TZ = "Asia/Jakarta"
 
 npx vitest run tests/auth.integration.test.ts
@@ -255,6 +273,7 @@ npx vitest run tests/streak.integration.test.ts
 ```powershell
 # dari D:\habit-shaper\apps\api
 npx vitest run
+npm exec --workspace @habit-shaper/api -- vitest run --config vitest.unit.config.ts
 npx vitest run --coverage
 npx tsc --noEmit
 npx eslint . --max-warnings=0
