@@ -183,10 +183,165 @@ describe("Habits integration", () => {
 
     const response = await request(app)
       .delete(`/api/v1/habits/${habit.id}`)
-      .set("Authorization", `Bearer ${token}`);
+      .set("Authorization", `Bearer ${token}`)
+      .send({ goalReplacements: [] });
     expect(response.status).toBe(204);
     expect(await prisma.habit.findUnique({ where: { id: habit.id } })).toBeNull();
     expect(await prisma.checkIn.count({ where: { habitId: habit.id } })).toBe(0);
+  });
+
+  it("HAB-I-11 DELETE wajib meminta pengganti untuk goal yang akan kosong", async () => {
+    const { user, token } = await createUser();
+    const habit = await prisma.habit.create({
+      data: { ownerId: user.id, title: "Only habit", type: "POSITIVE" },
+    });
+    const goal = await prisma.goal.create({ data: { ownerId: user.id, title: "Goal" } });
+    await prisma.goalHabit.create({ data: { goalId: goal.id, habitId: habit.id } });
+
+    const response = await request(app)
+      .delete(`/api/v1/habits/${habit.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ goalReplacements: [] });
+
+    expect(response.status).toBe(422);
+    expect(errorBody(response.body).error.code).toBe("REPLACEMENT_REQUIRED");
+    expect(await prisma.habit.findUnique({ where: { id: habit.id } })).not.toBeNull();
+    expect(await prisma.goalHabit.findMany({ where: { goalId: goal.id } })).toHaveLength(1);
+  });
+
+  it("HAB-I-12 DELETE assigns replacement and deletes habit atomically for multiple goals", async () => {
+    const { user, token } = await createUser();
+    const habit = await prisma.habit.create({
+      data: { ownerId: user.id, title: "Only habit", type: "POSITIVE" },
+    });
+    const replacement = await prisma.habit.create({
+      data: { ownerId: user.id, title: "Replacement", type: "NEGATIVE" },
+    });
+    const goals = await Promise.all([
+      prisma.goal.create({ data: { ownerId: user.id, title: "Goal one" } }),
+      prisma.goal.create({ data: { ownerId: user.id, title: "Goal two" } }),
+    ]);
+    await prisma.goalHabit.createMany({
+      data: goals.map((goal) => ({ goalId: goal.id, habitId: habit.id })),
+    });
+
+    const response = await request(app)
+      .delete(`/api/v1/habits/${habit.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        goalReplacements: goals.map((goal) => ({ goalId: goal.id, habitId: replacement.id })),
+      });
+
+    expect(response.status).toBe(204);
+    expect(await prisma.habit.findUnique({ where: { id: habit.id } })).toBeNull();
+    for (const goal of goals) {
+      expect(
+        await prisma.goalHabit.findUnique({
+          where: { goalId_habitId: { goalId: goal.id, habitId: replacement.id } },
+        }),
+      ).not.toBeNull();
+    }
+  });
+
+  it("HAB-I-13 DELETE rejects a replacement owned by another user", async () => {
+    const owner = await createUser();
+    const other = await createUser();
+    const habit = await prisma.habit.create({
+      data: { ownerId: owner.user.id, title: "Only habit", type: "POSITIVE" },
+    });
+    const replacement = await prisma.habit.create({
+      data: { ownerId: other.user.id, title: "Private replacement", type: "POSITIVE" },
+    });
+    const goal = await prisma.goal.create({ data: { ownerId: owner.user.id, title: "Goal" } });
+    await prisma.goalHabit.create({ data: { goalId: goal.id, habitId: habit.id } });
+
+    const response = await request(app)
+      .delete(`/api/v1/habits/${habit.id}`)
+      .set("Authorization", `Bearer ${owner.token}`)
+      .send({ goalReplacements: [{ goalId: goal.id, habitId: replacement.id }] });
+
+    expect(response.status).toBe(404);
+    expect(await prisma.habit.findUnique({ where: { id: habit.id } })).not.toBeNull();
+    expect(await prisma.goalHabit.findMany({ where: { goalId: goal.id } })).toHaveLength(1);
+  });
+
+  it("HAB-I-14 DELETE creates and assigns one inline replacement to multiple goals atomically", async () => {
+    const { user, token } = await createUser();
+    const habit = await prisma.habit.create({
+      data: { ownerId: user.id, title: "Only habit", type: "POSITIVE" },
+    });
+    const goals = await Promise.all([
+      prisma.goal.create({ data: { ownerId: user.id, title: "Goal one" } }),
+      prisma.goal.create({ data: { ownerId: user.id, title: "Goal two" } }),
+    ]);
+    await prisma.goalHabit.createMany({
+      data: goals.map((goal) => ({ goalId: goal.id, habitId: habit.id })),
+    });
+
+    const response = await request(app)
+      .delete(`/api/v1/habits/${habit.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        goalReplacements: [],
+        newHabitGoalIds: goals.map((goal) => goal.id),
+        newHabit: { title: "New replacement", type: "NEGATIVE" },
+      });
+
+    expect(response.status).toBe(204);
+    expect(await prisma.habit.findUnique({ where: { id: habit.id } })).toBeNull();
+    const replacement = await prisma.habit.findFirst({
+      where: { ownerId: user.id, title: "New replacement" },
+    });
+    expect(replacement).not.toBeNull();
+    for (const goal of goals) {
+      expect(
+        await prisma.goalHabit.findUnique({
+          where: { goalId_habitId: { goalId: goal.id, habitId: replacement?.id ?? "" } },
+        }),
+      ).not.toBeNull();
+    }
+  });
+
+  it("HAB-I-15 DELETE rejects duplicate or unrelated replacements without partial mutation", async () => {
+    const { user, token } = await createUser();
+    const habit = await prisma.habit.create({
+      data: { ownerId: user.id, title: "Only linked habit", type: "POSITIVE" },
+    });
+    const replacement = await prisma.habit.create({
+      data: { ownerId: user.id, title: "Replacement", type: "POSITIVE" },
+    });
+    const goal = await prisma.goal.create({ data: { ownerId: user.id, title: "Affected goal" } });
+    const unrelatedGoal = await prisma.goal.create({
+      data: { ownerId: user.id, title: "Unrelated goal" },
+    });
+    await prisma.goalHabit.create({ data: { goalId: goal.id, habitId: habit.id } });
+    await prisma.goalHabit.create({ data: { goalId: unrelatedGoal.id, habitId: replacement.id } });
+
+    const duplicate = await request(app)
+      .delete(`/api/v1/habits/${habit.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        goalReplacements: [
+          { goalId: goal.id, habitId: replacement.id },
+          { goalId: goal.id, habitId: replacement.id },
+        ],
+      });
+    expect(duplicate.status).toBe(400);
+    expect(errorBody(duplicate.body).error.code).toBe("VALIDATION_ERROR");
+
+    const unrelated = await request(app)
+      .delete(`/api/v1/habits/${habit.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ goalReplacements: [{ goalId: unrelatedGoal.id, habitId: replacement.id }] });
+    expect(unrelated.status).toBe(422);
+    expect(errorBody(unrelated.body).error.code).toBe("REPLACEMENT_REQUIRED");
+    expect(await prisma.habit.findUnique({ where: { id: habit.id } })).not.toBeNull();
+    expect(
+      await prisma.goalHabit.findUnique({
+        where: { goalId_habitId: { goalId: goal.id, habitId: habit.id } },
+      }),
+    ).not.toBeNull();
+    expect(await prisma.goalHabit.count({ where: { goalId: unrelatedGoal.id } })).toBe(1);
   });
 
   it("HAB-I-10 malformed UUID ditolak 400 dan tanggal historis mengembalikan checkIn netral", async () => {

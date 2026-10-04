@@ -2,6 +2,7 @@ import request from "supertest";
 import { afterEach, describe, expect, it } from "vitest";
 import app from "../src/app.js";
 import { prisma } from "../src/lib/prisma.js";
+import { dateOnlyToUTC, todayWIB } from "../src/utils/date.js";
 
 type RegisteredUser = { id: string; email: string };
 type ErrorBody = { error: { code: string; message: string; details?: unknown } };
@@ -179,6 +180,37 @@ describe("Goals integration", () => {
     });
   });
 
+  it("GOAL-I-17 progress starts inclusively on the habit's creation date in WIB", async () => {
+    const { user, token } = await createUser();
+    const today = todayWIB();
+    const habit = await prisma.habit.create({
+      data: {
+        ownerId: user.id,
+        title: "Habit created today",
+        type: "POSITIVE",
+        createdAt: dateOnlyToUTC(today),
+      },
+    });
+    const goal = await prisma.goal.create({ data: { ownerId: user.id, title: "New habit goal" } });
+    await prisma.goalHabit.create({ data: { goalId: goal.id, habitId: habit.id } });
+    await prisma.checkIn.create({
+      data: { habitId: habit.id, date: dateOnlyToUTC(today), status: "DONE" },
+    });
+
+    const response = await request(app)
+      .get("/api/v1/goals")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.goals[0]).toMatchObject({
+      id: goal.id,
+      progress: {
+        weeklyCompletionPct: 100,
+        perHabit: [{ habitId: habit.id, done: 1, miss: 0 }],
+      },
+    });
+  });
+
   it("GOAL-I-07 GET /goals/:id -> memuat habits dan metrik progres", async () => {
     const { user, token } = await createUser();
     const habitId = await createHabit(user.id);
@@ -218,11 +250,108 @@ describe("Goals integration", () => {
     expect(await prisma.checkIn.count({ where: { habitId } })).toBe(1);
   });
 
+  it("PATCH /goals/:id menyimpan perubahan goal dan relasi habit sebagai satu transaksi", async () => {
+    const { user, token } = await createUser();
+    const first = await createHabit(user.id, "First");
+    const second = await createHabit(user.id, "Second");
+    const added = await createHabit(user.id, "Added");
+    const inlineHabitTitle = "Created inside transaction";
+    const goal = await createGoal(token, [first, second]);
+
+    const combined = await request(app)
+      .patch(`/api/v1/goals/${goal.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "Atomic update",
+        addHabitIds: [added],
+        removeHabitIds: [first],
+        newHabits: [{ title: inlineHabitTitle, type: "NEGATIVE" }],
+      });
+    expect(combined.status).toBe(200);
+    expect(combined.body.goal.title).toBe("Atomic update");
+    const inlineHabitId = combined.body.createdHabitIds[0] as string;
+    expect(
+      combined.body.goal.habitLinks.map(({ habit }: { habit: { id: string } }) => habit.id).sort(),
+    ).toEqual([second, added, inlineHabitId].sort());
+    expect(combined.body.goal.habitLinks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          habit: expect.objectContaining({
+            id: inlineHabitId,
+            title: inlineHabitTitle,
+            type: "NEGATIVE",
+          }),
+        }),
+      ]),
+    );
+
+    const rejected = await request(app)
+      .patch(`/api/v1/goals/${goal.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Should roll back", removeHabitIds: [second, added, inlineHabitId] });
+    expect(rejected.status).toBe(422);
+    const unchanged = await prisma.goal.findUnique({
+      where: { id: goal.id },
+      include: { habitLinks: { select: { habitId: true } } },
+    });
+    expect(unchanged?.title).toBe("Atomic update");
+    expect(unchanged?.habitLinks.map(({ habitId }) => habitId).sort()).toEqual(
+      [second, added, inlineHabitId].sort(),
+    );
+  });
+
+  it("PATCH /goals/:id rolls back inline habit creation when assigning its relation fails", async () => {
+    const { user, token } = await createUser();
+    const initialHabitId = await createHabit(user.id, "Existing before failed inline save");
+    const goal = await createGoal(token, [initialHabitId]);
+    const inlineTitle = `Rollback inline ${goal.id}`;
+
+    try {
+      await prisma.$executeRaw`
+        CREATE OR REPLACE FUNCTION public.fail_ui21_goal_habit_insert()
+        RETURNS trigger AS $$
+        BEGIN
+          RAISE EXCEPTION 'UI-21 integration test assignment failure' USING ERRCODE = 'P0001';
+        END;
+        $$ LANGUAGE plpgsql;
+      `;
+      await prisma.$executeRaw`
+        CREATE TRIGGER fail_ui21_goal_habit_insert
+        BEFORE INSERT ON "GoalHabit"
+        FOR EACH ROW EXECUTE FUNCTION public.fail_ui21_goal_habit_insert();
+      `;
+
+      const response = await request(app)
+        .patch(`/api/v1/goals/${goal.id}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          removeHabitIds: [initialHabitId],
+          newHabits: [{ title: inlineTitle, type: "NEGATIVE" }],
+        });
+
+      expect(response.status).toBe(500);
+      errorBody(response.body);
+      expect(await prisma.habit.count({ where: { ownerId: user.id, title: inlineTitle } })).toBe(0);
+      expect(
+        await prisma.goalHabit.findUnique({
+          where: { goalId_habitId: { goalId: goal.id, habitId: initialHabitId } },
+        }),
+      ).not.toBeNull();
+    } finally {
+      await prisma.$executeRaw`DROP TRIGGER IF EXISTS fail_ui21_goal_habit_insert ON "GoalHabit"`;
+      await prisma.$executeRaw`DROP FUNCTION IF EXISTS public.fail_ui21_goal_habit_insert()`;
+    }
+  });
+
   it("GOAL-I-09 DELETE /goals/:id -> 204, habit dan check-in tetap utuh", async () => {
     const { user, token } = await createUser();
     const habitId = await createHabit(user.id);
     const goal = await createGoal(token, [habitId]);
     await prisma.checkIn.create({ data: { habitId, date: new Date("2026-09-28T00:00:00.000Z") } });
+    const streakBefore = await request(app)
+      .get(`/api/v1/habits/${habitId}/streak?range=daily`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(streakBefore.status).toBe(200);
     const response = await request(app)
       .delete(`/api/v1/goals/${goal.id}`)
       .set("Authorization", `Bearer ${token}`);
@@ -230,6 +359,11 @@ describe("Goals integration", () => {
     expect(await prisma.habit.findUnique({ where: { id: habitId } })).not.toBeNull();
     expect(await prisma.checkIn.count({ where: { habitId } })).toBe(1);
     expect(await prisma.goalHabit.count({ where: { goalId: goal.id } })).toBe(0);
+    const streakAfter = await request(app)
+      .get(`/api/v1/habits/${habitId}/streak?range=daily`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(streakAfter.status).toBe(200);
+    expect(streakAfter.body).toEqual(streakBefore.body);
   });
 
   it("GOAL-I-10 POST /goals/:id/habits -> assign idempotent tanpa duplikat", async () => {
@@ -261,6 +395,51 @@ describe("Goals integration", () => {
       .send({ habitId: foreignHabit });
     expect(response.status).toBe(404);
     expect(errorBody(response.body).error.code).toBe("NOT_FOUND");
+  });
+
+  it("GOAL-I-16 POST habit lalu assign ke goal -> muncul pada daftar habit dan relasi goal", async () => {
+    const { user, token } = await createUser();
+    const initialHabitId = await createHabit(user.id, "Existing habit");
+    const goal = await createGoal(token, [initialHabitId]);
+    const created = await request(app)
+      .post("/api/v1/habits")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Inline replacement", type: "NEGATIVE" });
+    expect(created.status).toBe(201);
+    const createdHabit = created.body.habit as {
+      id: string;
+      title: string;
+      type: "POSITIVE" | "NEGATIVE";
+    };
+
+    const assigned = await request(app)
+      .post(`/api/v1/goals/${goal.id}/habits`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ habitId: createdHabit.id });
+    expect(assigned.status).toBe(200);
+
+    const [habitsResponse, goalsResponse] = await Promise.all([
+      request(app).get("/api/v1/habits").set("Authorization", `Bearer ${token}`),
+      request(app).get("/api/v1/goals").set("Authorization", `Bearer ${token}`),
+    ]);
+    expect(habitsResponse.status).toBe(200);
+    expect(habitsResponse.body.habits).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: createdHabit.id,
+          title: "Inline replacement",
+          type: "NEGATIVE",
+        }),
+      ]),
+    );
+    expect(goalsResponse.status).toBe(200);
+    expect(goalsResponse.body.goals[0].habitLinks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          habit: expect.objectContaining({ id: createdHabit.id, title: "Inline replacement" }),
+        }),
+      ]),
+    );
   });
 
   it("GOAL-I-12 DELETE /goals/:id/habits/:habitId -> unassign satu dari banyak", async () => {

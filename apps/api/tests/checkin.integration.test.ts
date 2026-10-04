@@ -82,6 +82,23 @@ describe("Check-in and undo integration", () => {
     expect(await prisma.checkIn.count({ where: { habitId } })).toBe(1);
   });
 
+  it("CHK-I-10 concurrent check-ins remain idempotent with one database row", async () => {
+    const { user, token } = await createUser();
+    const habitId = await createHabit(user.id);
+    const responses = await Promise.all([
+      request(app)
+        .post(`/api/v1/habits/${habitId}/check-in`)
+        .set("Authorization", `Bearer ${token}`),
+      request(app)
+        .post(`/api/v1/habits/${habitId}/check-in`)
+        .set("Authorization", `Bearer ${token}`),
+    ]);
+
+    expect(responses.map(({ status }) => status)).toEqual([200, 200]);
+    expect(responses[0]?.body).toEqual(responses[1]?.body);
+    expect(await prisma.checkIn.count({ where: { habitId } })).toBe(1);
+  });
+
   it("CHK-I-03 POST /habits/:id/check-in untuk NEGATIVE -> DONE (hari bersih)", async () => {
     const { user, token } = await createUser();
     const habitId = await createHabit(user.id, "NEGATIVE");
